@@ -34,7 +34,7 @@ jobs:
           .venv/bin/pip install \
             gspread gspread-formatting kiteconnect pandas requests retrying tqdm \
             google-auth google-auth-oauthlib google-auth-httplib2 \
-            webdriver-manager selenium pyotp
+            webdriver-manager selenium pyotp yfinance
 
       # ✅ Secrets + file reconstruction
       - name: Recreate secret files (Mac path + repo root)
