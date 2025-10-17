@@ -37,7 +37,8 @@ jobs:
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
           CREDS_JSON: ${{ secrets.CREDS_JSON }}
           SMTP_TOKEN_JSON: ${{ secrets.SMTP_TOKEN_JSON }}
-        run: |
+       run: |
+          mkdir -p /Users/sugamkuchhal/Documents/kite-gtt-demo
           [ -n "$API_KEY" ] && echo "$API_KEY" > /Users/sugamkuchhal/Documents/kite-gtt-demo/api_key.txt || true
           [ -n "$ACCESS_TOKEN" ] && echo "$ACCESS_TOKEN" > /Users/sugamkuchhal/Documents/kite-gtt-demo/access_token.txt || true
           [ -n "$CREDS_JSON" ] && echo "$CREDS_JSON" > /Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json || true
