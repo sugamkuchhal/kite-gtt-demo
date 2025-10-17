@@ -38,10 +38,10 @@ jobs:
           CREDS_JSON: ${{ secrets.CREDS_JSON }}
           SMTP_TOKEN_JSON: ${{ secrets.SMTP_TOKEN_JSON }}
         run: |
-          [ -n "$API_KEY" ] && echo "$API_KEY" > api_key.txt || true
-          [ -n "$ACCESS_TOKEN" ] && echo "$ACCESS_TOKEN" > access_token.txt || true
-          [ -n "$CREDS_JSON" ] && echo "$CREDS_JSON" > creds.json || true
-          [ -n "$SMTP_TOKEN_JSON" ] && echo "$SMTP_TOKEN_JSON" > smtp_token.json || true
+          [ -n "$API_KEY" ] && echo "$API_KEY" > /Users/sugamkuchhal/Documents/kite-gtt-demo/api_key.txt || true
+          [ -n "$ACCESS_TOKEN" ] && echo "$ACCESS_TOKEN" > /Users/sugamkuchhal/Documents/kite-gtt-demo/access_token.txt || true
+          [ -n "$CREDS_JSON" ] && echo "$CREDS_JSON" > /Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json || true
+          [ -n "$SMTP_TOKEN_JSON" ] && echo "$SMTP_TOKEN_JSON" > /Users/sugamkuchhal/Documents/kite-gtt-demo/smtp_token.json || true
 
       - name: Run scripts
         run: |
