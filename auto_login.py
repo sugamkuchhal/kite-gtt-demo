@@ -15,7 +15,6 @@ import shutil
 from kiteconnect import KiteConnect
 from webdriver_manager.chrome import ChromeDriverManager
 
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 # Load secrets
@@ -29,6 +28,40 @@ with open("api_key.txt") as f:
 
 LOGIN_URL = f"https://kite.zerodha.com/connect/login?api_key={API_KEY}&v=3"
 
+
+def _find_chrome_binary():
+    """Detect Chrome binary path for macOS, Linux, or CI."""
+    mac_candidates = [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "/Applications/Google Chrome Beta.app/Contents/MacOS/Google Chrome Beta",
+        "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ]
+    for p in mac_candidates:
+        if os.path.exists(p):
+            return p
+
+    linux_candidates = [
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+    ]
+    for p in linux_candidates:
+        if os.path.exists(p):
+            return p
+
+    env_path = os.environ.get("CHROME_BINARY")
+    if env_path and os.path.exists(env_path):
+        return env_path
+
+    raise FileNotFoundError(
+        "🚫 Could not find Chrome binary. "
+        "Install Chrome or set CHROME_BINARY env var to its path."
+    )
+
+
 def auto_login_and_get_kite():
     logging.info("🚀 Starting auto login process")
 
@@ -37,30 +70,39 @@ def auto_login_and_get_kite():
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
 
-    # ✅ Headless Chrome (for GitHub Actions)
-    options.add_argument("--headless=new")
+    # ✅ Only headless when in CI or explicitly requested
+    if os.environ.get("CI") == "true" or os.environ.get("HEADLESS") == "1":
+        options.add_argument("--headless=new")
+
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--incognito")
-    options.binary_location = "/usr/bin/google-chrome"
-    
+    options.add_argument("--window-size=1280,800")
+
     # ✅ Fix “user data directory is already in use” error
     options.add_argument(f"--user-data-dir={tempfile.mkdtemp(prefix='chrome-profile-')}")
 
+    # ✅ Detect correct Chrome binary
+    options.binary_location = _find_chrome_binary()
+
+    # ✅ Setup ChromeDriver
     try:
         driver_path = ChromeDriverManager().install()
+        logging.info(f"✅ Using ChromeDriver: {driver_path}")
     except Exception as e:
         logging.warning(f"⚠️ webdriver-manager failed: {e}")
         driver_path = shutil.which("chromedriver")
-    
-    driver = webdriver.Chrome(service=Service(driver_path), options=options)
 
-    options.add_argument('--incognito')
-    driver.get(LOGIN_URL)
+    if driver_path:
+        driver = webdriver.Chrome(service=Service(driver_path), options=options)
+    else:
+        driver = webdriver.Chrome(options=options)
+
     wait = WebDriverWait(driver, 8)
     totp_wait = WebDriverWait(driver, 3)
 
+    driver.get(LOGIN_URL)
     logging.info(f"🌐 Opened login URL: {LOGIN_URL}")
 
     # Wait for the password input to appear (common on both variants)
@@ -71,10 +113,9 @@ def auto_login_and_get_kite():
         driver.quit()
         return None, None
 
-    # Check if userid input is present (fresh login page 1.1) or not (session active page 1.2)
+    # Check if userid input is present (fresh login or session active)
     userid_elements = driver.find_elements(By.ID, "userid")
     if userid_elements:
-        # fresh login flow: enter userid + password
         logging.info("🆕 Fresh login detected - entering USER ID and PASSWORD")
         userid_element = userid_elements[0]
         userid_element.send_keys(USER_ID)
@@ -87,15 +128,12 @@ def auto_login_and_get_kite():
         submit_btn.click()
         logging.info("➡️ Clicked login button")
 
-        # Wait for page 1 userid element to become stale - ensures page 1 submission completed
         try:
             WebDriverWait(driver, 3).until(EC.staleness_of(userid_element))
             logging.info("⏳ Page 1 submitted, moving to TOTP page")
         except TimeoutException:
             logging.warning("⚠️ Page 1 userid element did not go stale after submit, proceeding cautiously")
-
     else:
-        # session active flow: only password field present
         logging.info("🔄 Session active detected - entering PASSWORD only")
         password_element.send_keys(PASSWORD)
         logging.info("🔒 Entered password")
@@ -103,14 +141,13 @@ def auto_login_and_get_kite():
         driver.find_element(By.CSS_SELECTOR, 'button[type="submit"]').click()
         logging.info("➡️ Clicked login button (session active flow)")
 
-        # Wait for password element to go stale (page transition)
         try:
             wait.until(EC.staleness_of(password_element))
             logging.info("⏳ Page 1 submitted, moving to TOTP page")
         except TimeoutException:
             logging.warning("⚠️ Password element did not go stale after submit, proceeding cautiously")
 
-    # Now wait for page 2 (TOTP) userid input to appear
+    # Now wait for TOTP input
     logging.info("⏳ Waiting for TOTP input field on page 2")
     try:
         totp_input = totp_wait.until(EC.presence_of_element_located((By.ID, "userid")))
@@ -159,11 +196,13 @@ def auto_login_and_get_kite():
         logging.error(f"❌ Failed to generate access token: {e}")
         return None, None
 
+
 def main():
     kite, _ = auto_login_and_get_kite()
     if kite:
         profile = kite.profile()
         logging.info(f"👤 Logged in as: {profile['user_name']} (user_id={profile['user_id']})")
+
 
 if __name__ == "__main__":
     main()
