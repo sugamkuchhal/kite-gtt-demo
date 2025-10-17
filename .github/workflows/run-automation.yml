@@ -62,5 +62,5 @@ jobs:
       - name: Run scripts
         run: |
           python3 fetch_holdings.py
-          python3 fetch_gtts.py
+          python3 fetch_all_gtts.py
 
