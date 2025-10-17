@@ -71,6 +71,6 @@ jobs:
           sudo -E bash -lc '
             source .venv/bin/activate
             echo "🚀 Running automated tasks..."
-            python3 fetch_holdings.py
-            python3 fetch_all_gtts.py
+            python3 nse_combined_fetcher.py --mode stock --ticker-file nse_stock_list.txt --worksheet "NSE_Stock_Data" --csv /Users/sugamkuchhal/Documents/kite-gtt-demo/nse_stock_data.csv --max-workers 10 --batch-size 200
+            python3 nse_combined_fetcher.py --mode etf --ticker-file nse_etf_list.txt --worksheet "NSE_ETF_Data" --csv /Users/sugamkuchhal/Documents/kite-gtt-demo/nse_etf_data.csv --max-workers 10 --batch-size 200
           '
