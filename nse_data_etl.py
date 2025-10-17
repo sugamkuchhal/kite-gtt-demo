@@ -3,6 +3,8 @@ from google.oauth2.service_account import Credentials
 import pandas as pd
 from datetime import datetime
 import re
+from gspread_formatting import format_cell_range, cellFormat, numberFormat
+
 
 CREDS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
 SOURCE_SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE"
@@ -210,6 +212,15 @@ def process_and_update():
     if to_append:
         ws_new.append_rows(to_append, value_input_option="USER_ENTERED")
 
+    try:
+        fmt = cellFormat(
+            numberFormat=numberFormat(type='DATE', pattern='dd-mmm-yyyy')
+        )
+        format_cell_range(ws_new, 'A2:A', fmt)
+        print("[FORMAT] BANK_NEW column A formatted as dd-mmm-yyyy")
+    except Exception as e:
+        print(f"[WARN] Could not format BANK_NEW column A: {e}")
+    
     end_time = datetime.now()
     elapsed = (end_time - start_time).total_seconds()
     print(f"[NSE ETL PROCESS END]✅  {end_time.strftime('%Y-%m-%d %H:%M:%S')} - Finished process_and_update (duration: {elapsed:.2f}s)")
