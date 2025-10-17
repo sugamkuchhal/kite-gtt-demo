@@ -36,8 +36,17 @@ def auto_login_and_get_kite():
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option("useAutomationExtension", False)
-    # options.add_argument("--headless")  # Optional: headless mode
+
+    # ✅ Headless Chrome (for GitHub Actions)
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
     options.add_argument("--incognito")
+    options.binary_location = "/usr/bin/google-chrome"
+    
+    # ✅ Fix “user data directory is already in use” error
+    options.add_argument(f"--user-data-dir={tempfile.mkdtemp(prefix='chrome-profile-')}")
 
     try:
         driver_path = ChromeDriverManager().install()
