@@ -38,26 +38,24 @@ jobs:
           CREDS_JSON: ${{ secrets.CREDS_JSON }}
           SMTP_TOKEN_JSON: ${{ secrets.SMTP_TOKEN_JSON }}
         run: |
-          # Create Mac-like directory (requires sudo)
+          set -e
+          # Mac-like directory
           sudo mkdir -p /Users/sugamkuchhal/Documents/kite-gtt-demo
 
-          # Write creds JSON at the expected hardcoded path
-          if [ -n "$API_KEY" ]; then
-            printf '%s' "$API_KEY" | sudo tee /Users/sugamkuchhal/Documents/kite-gtt-demo/api_key.txt > /dev/null
-            sudo chmod 600 /Users/sugamkuchhal/Documents/kite-gtt-demo/api_key.txt
-          fi
-          if [ -n "$ACCESS_TOKEN" ]; then
-            printf '%s' "$ACCESS_TOKEN" | sudo tee /Users/sugamkuchhal/Documents/kite-gtt-demo/access_token.txt > /dev/null
-            sudo chmod 600 /Users/sugamkuchhal/Documents/kite-gtt-demo/access_token.txt
-          fi
-          if [ -n "$CREDS_JSON" ]; then
-            printf '%s' "$CREDS_JSON" | sudo tee /Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json > /dev/null
-            sudo chmod 600 /Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json
-          fi
-          if [ -n "$SMTP_TOKEN_JSON" ]; then
-            printf '%s' "$SMTP_TOKEN_JSON" | sudo tee /Users/sugamkuchhal/Documents/kite-gtt-demo/smtp_token.json > /dev/null
-            sudo chmod 600 /Users/sugamkuchhal/Documents/kite-gtt-demo/smtp_token.json
-          fi
+          # --- Write to Mac path (your hardcoded locations)
+          [ -n "$API_KEY" ] && printf '%s' "$API_KEY" | sudo tee /Users/sugamkuchhal/Documents/kite-gtt-demo/api_key.txt > /dev/null
+          [ -n "$ACCESS_TOKEN" ] && printf '%s' "$ACCESS_TOKEN" | sudo tee /Users/sugamkuchhal/Documents/kite-gtt-demo/access_token.txt > /dev/null
+          [ -n "$CREDS_JSON" ] && printf '%s' "$CREDS_JSON" | sudo tee /Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json > /dev/null
+          sudo chmod 600 /Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json || true
+          [ -n "$SMTP_TOKEN_JSON" ] && printf '%s' "$SMTP_TOKEN_JSON" | sudo tee /Users/sugamkuchhal/Documents/kite-gtt-demo/smtp_token.json > /dev/null
+          sudo chmod 600 /Users/sugamkuchhal/Documents/kite-gtt-demo/smtp_token.json || true
+
+          # --- ALSO write to repo root (what your code opens: "api_key.txt")
+          [ -n "$API_KEY" ] && printf '%s' "$API_KEY" > api_key.txt
+          [ -n "$ACCESS_TOKEN" ] && printf '%s' "$ACCESS_TOKEN" > access_token.txt
+
+          # quick sanity
+          ls -l api_key.txt access_token.txt
 
       - name: Run scripts
         run: |
