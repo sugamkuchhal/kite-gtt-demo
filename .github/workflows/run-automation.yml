@@ -1,0 +1,45 @@
+name: Automated Script Runner
+
+on:
+  schedule:
+    - cron: "0 5 * * *"  # runs daily at 5 AM UTC
+  workflow_dispatch:      # allows manual trigger from GitHub
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install gspread gspread-formatting kiteconnect pandas requests retrying tqdm \
+            google-auth google-auth-oauthlib google-auth-httplib2 webdriver-manager selenium pyotp
+
+      - name: Create credential files
+        env:
+          API_KEY: ${{ secrets.API_KEY_VS }}
+          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN_VS }}
+          CREDS_JSON: ${{ secrets.CREDS_VS_JSON }}
+        run: |
+          echo "$API_KEY" > api_key_vs.txt
+          echo "$ACCESS_TOKEN" > access_token_vs.txt
+          echo "$CREDS_JSON" > creds_vs.json
+
+      - name: Run scripts
+        run: |
+          python3 fetch_holdings_vs.py
+          python3 nse_combined_fetcher.py --mode stock \
+            --ticker-file nse_stock_list.txt \
+            --worksheet "NSE_Stock_Data" \
+            --csv nse_stock_data.csv \
+            --max-workers 10 \
+            --batch-size 200
+          bash combined_run.sh
