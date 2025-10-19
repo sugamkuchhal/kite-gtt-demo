@@ -51,7 +51,7 @@ try:
     flag_ws = flag_sh.worksheet("ALL_OLD_GTTs")
 
     # Write boolean TRUE/FALSE to R1 (Google Sheets boolean, not string)
-    flag_ws.update("R1", [[changed]])
+    flag_ws.update(range_name="R1", values=[[changed]])
 
 except:
 
@@ -60,7 +60,7 @@ except:
         gc = get_client()
         flag_sh = gc.open_by_key("14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s")
         flag_ws = flag_sh.worksheet("ALL_OLD_GTTs")
-        flag_ws.update("R1", [[False]])
+        flag_ws.update(range_name="R1", values=[[False]])
     except:
 
         # If even the flag write fails, there's nothing further we can do.
