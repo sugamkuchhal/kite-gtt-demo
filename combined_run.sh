@@ -21,18 +21,7 @@ python3 ops_sort.py --sheet-name="SARAS D G B - Turtle Trading with BOH" \
     --red-tab="Old_GTT_List" \
     --yellow-tab="Action_List"
 
-if [ "$(head -n 1 /Users/sugamkuchhal/Documents/kite-gtt-demo/friday_date_ext.txt)" = "0" ]; then
-    
-    python3 set_field_false.py
-
-    echo ""
-
-fi
-
-
 if [ "$(head -n 1 /Users/sugamkuchhal/Documents/kite-gtt-demo/friday_date_ext.txt)" = "1" ]; then
-    
-    python3 set_field_true.py
 
     echo "Running: KWK"
 
