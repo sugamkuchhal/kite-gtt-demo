@@ -11,10 +11,3 @@ access_token.txt
 api_key.txt
 creds.json
 smtp_token.json
-
-# Big or generated data files (adjust as you like)
-nse_etf_data.csv
-nse_full_stock_data.csv
-nse_stock_data.csv
-temp_equity.csv
-friday_date_ext.txt
