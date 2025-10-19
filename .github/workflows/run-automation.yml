@@ -79,4 +79,11 @@ jobs:
             python3 prepare_feed_list.py --sheet-name "Algo Master Feed Sheet" --source-sheet "SGST_OPEN_LIST" --dest-sheet "SGST_FILTERED_TICKERS"
             python3 prepare_feed_list.py --sheet-name "Algo Master Feed Sheet" --source-sheet "SUPER_OPEN_LIST" --dest-sheet "SUPER_FILTERED_TICKERS"
             python3 prepare_feed_list.py --sheet-name "Algo Master Feed Sheet" --source-sheet "TURTLE_OPEN_LIST" --dest-sheet "TURTLE_FILTERED_TICKERS"
+            python3 fetch_all_gtts.py
+            python3 fetch_all_orders.py
+            python3 append_new_orders.py
+            python3 fifo_portfolio.py
+            python3 fetch_holdings.py
+            python3 date_ext.py
+            python3 data_val.py
           '
