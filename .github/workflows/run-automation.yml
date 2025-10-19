@@ -32,8 +32,8 @@ jobs:
           python3 -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
           .venv/bin/pip install \
-            gspread gspread-formatting kiteconnect pandas requests retrying tqdm \
-            google-auth google-auth-oauthlib google-auth-httplib2 \
+            gspread gspread-formatting kiteconnect pandas requests \ 
+            retrying tqdm google-auth google-auth-oauthlib google-auth-httplib2 \
             webdriver-manager selenium pyotp yfinance oauth2client
 
       # ✅ Secrets + file reconstruction
