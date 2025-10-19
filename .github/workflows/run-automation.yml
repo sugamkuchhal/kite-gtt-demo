@@ -86,7 +86,7 @@ jobs:
             python3 fetch_holdings.py
             python3 date_ext.py
             python3 data_val.py
-            python3 ops_sort_vs.py --sheet-name="VS D G B - SGST (Reversal Validation) With BOH" --green-tab="GTT_List" --red-tab="Old_GTT_List" --yellow-tab="Action_List"
-            python3 ops_sort_vs.py --sheet-name="VS D G B - Super BreakOut With BOH" --green-tab="GTT_List" --red-tab="Old_GTT_List" --yellow-tab="Action_List"
-            python3 ops_sort_vs.py --sheet-name="VS D G B - Turtle Trading with BOH" --green-tab="GTT_List" --red-tab="Old_GTT_List" --yellow-tab="Action_List"
+            python3 ops_sort.py --sheet-name="SARAS D G B - SGST (Reversal Validation) With BOH" --green-tab="GTT_List" --red-tab="Old_GTT_List" --yellow-tab="Action_List"
+            python3 ops_sort.py --sheet-name="SARAS D G B - Super BreakOut With BOH" --green-tab="GTT_List" --red-tab="Old_GTT_List" --yellow-tab="Action_List"
+            python3 ops_sort.py --sheet-name="SARAS D G B - Turtle Trading with BOH" --green-tab="GTT_List" --red-tab="Old_GTT_List" --yellow-tab="Action_List"
           '
