@@ -6,10 +6,9 @@ Single script for NSE STOCK and ETF fetch:
 - --mode stock|etf
 - Stocks: default NSE list or --ticker-file
 - ETFs: requires --ticker-file
-- Always outputs BOTH CSV + Google Sheets
+- Uploads to Google Sheets
 - Symbols normalized to uppercase with NSE: prefix everywhere
 - Adaptive Google Sheets upload + full formatting
-- failed_symbols.csv always written (empty if none)
 """
 
 import argparse
@@ -29,7 +28,6 @@ pd.set_option("future.no_silent_downcasting", True)
 import requests
 import yfinance as yf
 from datetime import datetime
-from retrying import retry
 import gspread
 from google.oauth2.service_account import Credentials
 from tqdm import tqdm
@@ -239,7 +237,7 @@ class NSEBaseFetcher:
             except Exception:
                 pass
 
-        # fill NaNs with empty strings for CSV/Sheets (we'll apply numeric formatting in Sheets)
+        # fill NaNs with empty strings for Sheets (we'll apply numeric formatting in Sheets)
         df = df.fillna("")
         return df
 
@@ -378,10 +376,6 @@ class NSEBaseFetcher:
 
         return True
 
-    def save_to_csv(self, df: pd.DataFrame, filename: str):
-        df.to_csv(filename, index=False)
-        logger.info(f"Saved CSV: {filename}")
-
 # ----------------- Stock/ETF Fetchers -----------------
 class NSEStockDataFetcher(NSEBaseFetcher):
     DEFAULT_NSE_LIST_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
@@ -424,18 +418,6 @@ class NSEETFDataFetcher(NSEBaseFetcher):
         self.symbols = read_custom_ticker_list(ticker_file)
 
 # ----------------- CLI / Main -----------------
-def write_failed_symbols_file(failed: List[str], filename: str = "failed_symbols.csv"):
-    # Overwrite single file each run. If empty, create empty file.
-    if not failed:
-        # create/overwrite empty file
-        open(filename, "w", encoding="utf-8").close()
-        logger.info(f"Failed symbols file created (empty): {filename}")
-        return
-    # else write one per line
-    with open(filename, "w", encoding="utf-8") as f:
-        for s in failed:
-            f.write(f"{s}\n")
-    logger.info(f"Wrote {len(failed)} failed symbols to {filename}")
 
 def human_summary(mode: str, success_count: int, failed: List[str]):
     print()  # blank line
@@ -444,20 +426,16 @@ def human_summary(mode: str, success_count: int, failed: List[str]):
     print(f"   Failed: {len(failed)} tickers", end="")
     if len(failed) == 0:
         print()
-        print("   Failed list saved to failed_symbols.csv (empty)")
     elif len(failed) <= 10:
         print(" → " + ", ".join(failed))
-        print("   Failed list saved to failed_symbols.csv")
     else:
         print()
-        print("   (Full list saved to failed_symbols.csv)")
 
 def main():
     parser = argparse.ArgumentParser(description="Combined NSE Stock & ETF Data Fetcher")
     parser.add_argument("--mode", choices=["stock", "etf"], required=True, help="Run mode: stock or etf")
     parser.add_argument("--ticker-file", type=str, help="Custom ticker file (TXT or CSV). Required for ETF mode.")
     parser.add_argument("--worksheet", type=str, required=True, help="Worksheet/tab name to write (required)")
-    parser.add_argument("--csv", type=str, required=True, help="CSV output filename (required). Example: /path/out.csv")
     parser.add_argument("--max-workers", type=int, default=10, help="Thread pool size for Yahoo fetches")
     parser.add_argument("--batch-size", type=int, default=200, help="Initial batch size for Sheets upload (adaptive)")
     args = parser.parse_args()
@@ -473,7 +451,7 @@ def main():
             logger.error(f"Failed to load symbols for stock mode: {e}")
             sys.exit(1)
         worksheet = args.worksheet
-        csv_file = args.csv
+
     else:
         fetcher = NSEETFDataFetcher(max_workers=args.max_workers)
         try:
@@ -482,7 +460,6 @@ def main():
             logger.error(f"Failed to load symbols for etf mode: {e}")
             sys.exit(1)
         worksheet = args.worksheet
-        csv_file = args.csv
 
     # fetch
     fetcher.fetch_all()
@@ -490,16 +467,7 @@ def main():
     # create dataframe
     df = fetcher.create_dataframe()
 
-    # save CSV (always)
-    try:
-        fetcher.save_to_csv(df, csv_file)
-    except Exception as e:
-        logger.error(f"CSV save failed: {e}")
-
-    # write failed_symbols.csv (overwrite single file)
     # Ensure failed list uses normalized NSE: prefix (they are already normalized)
-    failed_symbols = fetcher.failed_symbols or []
-    write_failed_symbols_file(failed_symbols, filename="failed_symbols.csv")
 
     # upload to google sheets (always)
     try:
@@ -510,7 +478,7 @@ def main():
 
     # final human-readable summary
     success_count = len(fetcher.stock_data)
-    human_summary(mode, success_count, failed_symbols)
+    human_summary(mode, success_count, fetcher.failed_symbols)
 
 if __name__ == "__main__":
     main()
