@@ -89,4 +89,7 @@ jobs:
             python3 ops_sort.py --sheet-name="SARAS D G B - SGST (Reversal Validation) With BOH" --green-tab="GTT_List" --red-tab="Old_GTT_List" --yellow-tab="Action_List"
             python3 ops_sort.py --sheet-name="SARAS D G B - Super BreakOut With BOH" --green-tab="GTT_List" --red-tab="Old_GTT_List" --yellow-tab="Action_List"
             python3 ops_sort.py --sheet-name="SARAS D G B - Turtle Trading with BOH" --green-tab="GTT_List" --red-tab="Old_GTT_List" --yellow-tab="Action_List"
+            bash combined_run.sh
+            python3 ops_sort.py --sheet-name="SARAS Portfolio - Stocks" --green-tab="Mailing_List" --red-tab="Old_Mailing_List" --yellow-tab="Action_Mailing_List" --loose-update
+            python algo_tickers_mailer.py --emails "sugamkuchhal@gmail.com,sharma.virat@gmail.com"
           '
