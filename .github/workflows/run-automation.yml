@@ -37,7 +37,7 @@ jobs:
             webdriver-manager selenium pyotp yfinance oauth2client
 
       # ✅ Secrets + file reconstruction
-      - name: Recreate secret files (Mac path + repo root)
+      - name: Recreate secret files (keep Mac path + repo root)
         env:
           API_KEY: ${{ secrets.API_KEY }}
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
