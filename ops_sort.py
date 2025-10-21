@@ -156,6 +156,9 @@ def main():
     if red_delete_idxs:
         red_ws.sort((1, 'asc'))  # sort by Col A
 
+    log("WAIT: Sleeping 30 seconds for Sheets to refresh/recalculate.")
+    time.sleep(30)
+
     log("✅ SCRIPT COMPLETED.")
     log("")
 
