@@ -2,7 +2,7 @@ name: Unified Script Runner
 
 on:
   schedule:
-    - cron: "30 10 * * 1-5"  # 4:00 PM IST, Mon–Fri
+    - cron: "30 20 * * 1-5"  # 4:00 PM IST, Mon–Fri
   workflow_dispatch:
     inputs:
       command:
