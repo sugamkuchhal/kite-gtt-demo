@@ -53,7 +53,8 @@ jobs:
           .venv/bin/pip install \
             gspread gspread-formatting kiteconnect pandas requests \
             retrying tqdm google-auth google-auth-oauthlib google-auth-httplib2 \
-            webdriver-manager selenium pyotp yfinance oauth2client
+            webdriver-manager selenium pyotp yfinance oauth2client \
+            googleapiclient
 
       - name: Recreate secret files (repo root + Mac path mirror)
         env:
