@@ -2,13 +2,28 @@ name: Unified Script Runner
 
 on:
   schedule:
-    - cron: "30 10 * * 1-5"  # 4:00 PM IST, Mon–Fri
+    - cron: "0,30 4-9 * * 1-5"   # (UNCHANGED) 09:30–15:00 IST every 30 mins, Mon–Fri
+    - cron: "30 10 * * 1-5"      # (UNCHANGED) 16:00 IST (4:00 PM) Mon–Fri
   workflow_dispatch:
     inputs:
       command:
         description: "Optional: full command to run (e.g. python3 fetch_holdings.py). Leave empty to run the automated chain."
         required: false
         default: ""
+      run_type:
+        description: "Optional: choose which chain to run when no command is provided."
+        required: false
+        type: choice
+        options:
+          - auto
+          - midday
+          - eod
+        default: auto
+
+# Overlap safety: queue new runs until the current one finishes
+concurrency:
+  group: unified-script-runner
+  cancel-in-progress: false
 
 jobs:
   run:
@@ -60,15 +75,68 @@ jobs:
           [ -n "$SMTP_TOKEN_JSON" ] && printf '%s' "$SMTP_TOKEN_JSON" | sudo tee "$MACDIR/smtp_token.json" >/dev/null || true
           ls -l creds.json smtp_token.json api_key.txt access_token.txt || true
 
-      - name: Run (manual command if provided, else automated chain)
+      - name: Run (manual command if provided, else choose auto/midday/eod)
         env:
           INPUT_COMMAND: ${{ github.event.inputs.command }}
+          RUN_TYPE: ${{ github.event.inputs.run_type }}
         run: |
           sudo -E bash -lc '
+            set -euo pipefail
             source .venv/bin/activate
+
+            # If a manual command is provided, honor it exactly (existing behavior)
             if [ -n "${INPUT_COMMAND:-}" ]; then
+              echo "::notice::Running manual command: ${INPUT_COMMAND}"
               eval "$INPUT_COMMAND"
+              exit 0
+            fi
+
+            # Normalize RUN_TYPE (default "auto" if unset)
+            RT="${RUN_TYPE:-auto}"
+
+            # Helper: convert HH:MM to minutes since midnight
+            hm_to_min() {
+              IFS=: read -r h m <<<"$1"
+              echo $((10#$h*60 + 10#$m))
+            }
+
+            # UPDATED mid-day window: 09:00–15:45 IST (inclusive)
+            NOW_HM=$(TZ=Asia/Kolkata date +%H:%M)
+            NOW_MIN=$(hm_to_min "$NOW_HM")
+            MID_START=$(hm_to_min "09:00")
+            MID_END=$(hm_to_min "15:45")
+            IN_MIDDAY=false
+            if [ $NOW_MIN -ge $MID_START ] && [ $NOW_MIN -le $MID_END ]; then
+              IN_MIDDAY=true
+            fi
+
+            # Decide which chain to run
+            case "$RT" in
+              midday)
+                echo "::notice::run_type=midday selected via manual input"
+                RUN_MIDDAY=true
+                ;;
+              eod)
+                echo "::notice::run_type=eod selected via manual input"
+                RUN_MIDDAY=false
+                ;;
+              auto|*)
+                echo "::notice::run_type=auto; current IST time is $NOW_HM"
+                if [ "$IN_MIDDAY" = true ]; then
+                  RUN_MIDDAY=true
+                else
+                  RUN_MIDDAY=false
+                fi
+                ;;
+            esac
+
+            if [ "$RUN_MIDDAY" = true ]; then
+              echo "::group::RUN: Mid-day chain"
+              python3 fetch_all_gtts.py
+              python3 fetch_all_orders.py
+              echo "::endgroup::"
             else
+              echo "::group::RUN: EOD chain"
               python3 nse_combined_fetcher.py --mode stock --ticker-file nse_stock_list.txt --worksheet "NSE_Stock_Data" --max-workers 3 --batch-size 50
               python3 nse_combined_fetcher.py --mode etf --ticker-file nse_etf_list.txt --worksheet "NSE_ETF_Data" --max-workers 3 --batch-size 50
               python3 nse_data_etl.py
@@ -87,5 +155,6 @@ jobs:
               bash combined_run.sh
               python3 ops_sort.py --sheet-name="SARAS Portfolio - Stocks" --green-tab="Mailing_List" --red-tab="Old_Mailing_List" --yellow-tab="Action_Mailing_List" --loose-update
               python3 algo_tickers_mailer.py --emails "sugamkuchhal@gmail.com,sharma.virat@gmail.com"
+              echo "::endgroup::"
             fi
           '
