@@ -38,7 +38,27 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Preflight Kite token check
+        id: preflight
+        env:
+          API_KEY: ${{ secrets.API_KEY_VS }}
+          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+        run: |
+          set -e
+          echo "$API_KEY" > api_key.txt
+          echo "$ACCESS_TOKEN" > access_token.txt
+          python3 -m venv .venv_preflight
+          .venv_preflight/bin/python -m pip install --quiet kiteconnect
+          if .venv_preflight/bin/python preflight_vs.py; then
+            echo "status=ok" >> "$GITHUB_OUTPUT"
+            echo "::notice::Kite token valid – skipping Chrome."
+          else
+            echo "status=fail" >> "$GITHUB_OUTPUT"
+            echo "::warning::Kite token invalid – Chrome will be installed."
+          fi
+
       - name: Install Google Chrome
+        if: ${{ steps.preflight.outputs.status == 'fail' }}      
         run: |
           sudo apt-get update -y
           sudo apt-get install -y wget unzip
