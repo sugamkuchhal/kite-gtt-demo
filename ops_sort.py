@@ -3,7 +3,7 @@ from datetime import datetime
 import argparse
 
 # --- CONFIGURATION ---
-CREDENTIALS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo-vs/creds_vs.json"
+CREDENTIALS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
 
 # --- HELPERS ---
 def log(msg):
