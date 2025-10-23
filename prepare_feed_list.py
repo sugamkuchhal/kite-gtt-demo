@@ -131,19 +131,15 @@ def _post_checks_batch(spreadsheet):
         "VS_TURTLE_FEED_LIST!J1",
     ]
     try:
-        # Correct gspread call: Spreadsheet.values_batch_get(...)
-        resp = _retry_read(
-            spreadsheet.values_batch_get,
-            ranges,
-            value_render_option="UNFORMATTED_VALUE",
-        )
-        # resp is a dict with a 'valueRanges' list aligned with our ranges
+        # Correct portable call – no keyword arguments
+        resp = _retry_read(spreadsheet.values_batch_get, ranges)
+        # resp is a dict with 'valueRanges' aligned with our ranges
         for rng, vr in zip(ranges, resp.get("valueRanges", [])):
             values = vr.get("values", [])
             val = ""
             if values and values[0]:
                 cell = values[0][0]
-                val = (str(cell).strip() if cell is not None else "")
+                val = str(cell).strip() if cell is not None else ""
             if val == "0":
                 print(f"✅ Post-check passed: {rng} = 0 → Process completed successfully")
             else:
