@@ -161,11 +161,6 @@ jobs:
               echo "::endgroup::"
             else
               echo "::group::RUN: EOD chain"
-              python3 nse_combined_fetcher.py --mode stock --ticker-file nse_stock_list.txt --worksheet "NSE_Stock_Data" --max-workers 3 --batch-size 50
-              python3 nse_combined_fetcher.py --mode etf --ticker-file nse_etf_list.txt --worksheet "NSE_ETF_Data" --max-workers 3 --batch-size 50
-              python3 nse_data_etl.py
-              python3 prepare_feed_date_ext.py
-              python3 prepare_feed_data_val.py
               python3 prepare_feed_list.py --sheet-name "Algo Master Feed Sheet" --source-sheet "SGST_OPEN_LIST" --dest-sheet "SGST_FILTERED_TICKERS"
               python3 prepare_feed_list.py --sheet-name "Algo Master Feed Sheet" --source-sheet "SUPER_OPEN_LIST" --dest-sheet "SUPER_FILTERED_TICKERS"
               python3 prepare_feed_list.py --sheet-name "Algo Master Feed Sheet" --source-sheet "TURTLE_OPEN_LIST" --dest-sheet "TURTLE_FILTERED_TICKERS"
