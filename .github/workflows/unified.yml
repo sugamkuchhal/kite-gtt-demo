@@ -41,7 +41,7 @@ jobs:
       - name: Preflight Kite token check
         id: preflight
         env:
-          API_KEY: ${{ secrets.API_KEY_VS }}
+          API_KEY: ${{ secrets.API_KEY }}
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
         run: |
           set -e
@@ -49,7 +49,7 @@ jobs:
           echo "$ACCESS_TOKEN" > access_token.txt
           python3 -m venv .venv_preflight
           .venv_preflight/bin/python -m pip install --quiet kiteconnect
-          if .venv_preflight/bin/python preflight_vs.py; then
+          if .venv_preflight/bin/python preflight.py; then
             echo "status=ok" >> "$GITHUB_OUTPUT"
             echo "::notice::Kite token valid – skipping Chrome."
           else
