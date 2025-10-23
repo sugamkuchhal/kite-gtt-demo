@@ -1,6 +1,7 @@
 import gspread
 from datetime import datetime
 import argparse
+import time
 
 # --- CONFIGURATION ---
 CREDENTIALS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
@@ -46,7 +47,6 @@ def main():
     red_ws.update_acell("F1", token)    # Red: as requested, use F1
     log(f"POKE: Wrote '{token}' to Red!F1 to trigger recalc.")
 
-    import time
     log("WAIT: Sleeping 30 seconds for Sheets to refresh/recalculate.")
     time.sleep(30)
 
