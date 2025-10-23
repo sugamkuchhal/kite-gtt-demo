@@ -34,7 +34,8 @@ def prepare_feed_list(sheet_name, source_tab, dest_tab):
     time.sleep(10)
 
     # STEP 1: Copy rows where Column D starts with "Copy" → append A, B, C to dest
-    source_data = source_ws.get_all_values()[2:]  # Skip 2 header rows
+    # Read only A:D starting at row 3 (skip 2 header rows)
+    source_data = source_ws.get("A3:D", value_render_option="UNFORMATTED_VALUE") or []
     copy_rows = [row[:3] for row in source_data if len(row) > 3 and row[3].startswith("Copy")]
 
     if copy_rows:
@@ -48,7 +49,7 @@ def prepare_feed_list(sheet_name, source_tab, dest_tab):
     print("🔀 Step 2: Sorted destination by Ticker (B), then Timestamp (A).")
 
     # STEP 3: Deduplicate based on Column B (ticker)
-    dest_data = dest_ws.get_all_values()[1:]  # Skip 1 header row
+    dest_data = dest_ws.get("A2:C", value_render_option="UNFORMATTED_VALUE") or []
     seen = set()
     deduped_rows = []
     for row in dest_data:
@@ -71,13 +72,15 @@ def prepare_feed_list(sheet_name, source_tab, dest_tab):
     # STEP 4: Remove rows whose tickers match "Remove" in source sheet
     remove_tickers = [row[1] for row in source_data if len(row) > 3 and row[3].startswith("Remove")]
     if remove_tickers:
-        # Read current rows again
-        current_data = dest_ws.get_all_values()[1:]
-        filtered_rows = [row[:3] for row in current_data if row[1] not in remove_tickers]
-        dest_ws.batch_clear([f"A2:C{len(current_data)+1}"])
+        # Filter the already written (post-dedupe) rows we have in memory
+        before = len(deduped_rows)
+        filtered_rows = [row[:3] for row in deduped_rows if len(row) > 1 and row[1] not in remove_tickers]
+        removed = before - len(filtered_rows)
+        # Clear based on previous on-sheet length (dest_data) to avoid leftovers
+        dest_ws.batch_clear([f"A2:C{len(dest_data)+1}"])
         if filtered_rows:
             dest_ws.update(range_name="A2", values=filtered_rows, value_input_option='USER_ENTERED')
-        print(f"🗑️  Step 4: Removed {len(current_data) - len(filtered_rows)} rows matching 'Remove' tickers.")
+        print(f"🗑️  Step 4: Removed {removed} rows matching 'Remove' tickers.")
     else:
         print("⚠️  Step 4: No 'Remove' tickers found.")
 
@@ -102,6 +105,38 @@ if __name__ == "__main__":
     )
 
     # ------------------ POST-CHECKS: specific cells & simple prints ------------------
+    def _post_checks_batch(spreadsheet):
+        """
+        Batch read the six J1 cells across different worksheets in ONE API call,
+        then log the same pass/fail messages you have today.
+        """
+        ranges = [
+            "SGST_FEED_LIST!J1",
+            "VS_SGST_FEED_LIST!J1",
+            "SUPER_FEED_LIST!J1",
+            "VS_SUPER_FEED_LIST!J1",
+            "TURTLE_FEED_LIST!J1",
+            "VS_TURTLE_FEED_LIST!J1",
+        ]
+        try:
+            # Single READ for all six with fully qualified A1 ranges
+            results = spreadsheet.batch_get(
+                ranges,
+                value_render_option="UNFORMATTED_VALUE",
+            )
+            # results is a list aligned with ranges; each item is a 2D list of values
+            for rng, grid in zip(ranges, results):
+                val = ""
+                if grid and grid[0]:
+                    cell = grid[0][0]
+                    val = (str(cell).strip() if cell is not None else "")
+                if val == "0":
+                    print(f"✅ Post-check passed: {rng} = 0 → Process completed successfully")
+                else:
+                    print(f"❌ Post-check failed: {rng} = {val or '<EMPTY/None>'} → Process not completed")
+        except Exception as e:
+            print(f"❌ Batch post-checks failed: {e}")
+    
     def _check_cell_and_log(spreadsheet, tab_name, cell_addr, friendly_name=None):
         """
         Read spreadsheet.worksheet(tab_name).acell(cell_addr).value and print:
@@ -144,10 +179,4 @@ if __name__ == "__main__":
     if spreadsheet is None:
         print("❌ Could not resolve Spreadsheet object for post-checks. Skipping post-checks.")
     else:
-        # The checks to run (each checks J1 in the target feed-list worksheet)
-        _check_cell_and_log(spreadsheet, "SGST_FEED_LIST", "J1", "SGST_FEED_LIST!J1")
-        _check_cell_and_log(spreadsheet, "VS_SGST_FEED_LIST", "J1", "VS_SGST_FEED_LIST!J1")
-        _check_cell_and_log(spreadsheet, "SUPER_FEED_LIST", "J1", "SUPER_FEED_LIST!J1")
-        _check_cell_and_log(spreadsheet, "VS_SUPER_FEED_LIST", "J1", "VS_SUPER_FEED_LIST!J1")
-        _check_cell_and_log(spreadsheet, "TURTLE_FEED_LIST", "J1", "TURTLE_FEED_LIST!J1")
-        _check_cell_and_log(spreadsheet, "VS_TURTLE_FEED_LIST", "J1", "VS_TURTLE_FEED_LIST!J1")
+        _post_checks_batch(spreadsheet)
