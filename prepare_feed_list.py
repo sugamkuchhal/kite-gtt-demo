@@ -147,39 +147,6 @@ def _post_checks_batch(spreadsheet):
     except Exception as e:
         print(f"❌ Batch post-checks failed: {e}")
 
-def _check_cell_and_log(spreadsheet, tab_name, cell_addr, friendly_name=None):
-    """
-    Read spreadsheet.worksheet(tab_name).acell(cell_addr).value and print:
-     - ✅ message if value == "0"
-     - ❌ message otherwise (including errors)
-    (Kept as a fallback; not used when batch checks succeed.)
-    """
-    if friendly_name is None:
-        friendly_name = f"{tab_name}!{cell_addr}"
-
-    try:
-        try:
-            ws = spreadsheet.worksheet(tab_name)
-        except Exception as e:
-            print(f"❌ Could not open worksheet '{tab_name}' to check {friendly_name}: {e}")
-            return
-
-        try:
-            val = _retry_read(ws.acell, cell_addr).value
-        except Exception as e:
-            print(f"❌ Could not read cell {friendly_name}: {e}")
-            return
-
-        # Normalize and compare to string "0"
-        val_norm = (str(val).strip() if val is not None else "")
-        if val_norm == "0":
-            print(f"✅ Post-check passed: {friendly_name} = 0 → Process completed successfully")
-        else:
-            print(f"❌ Post-check failed: {friendly_name} = {val_norm or '<EMPTY/None>'} → Process not completed")
-
-    except Exception as e:
-        print(f"❌ Unexpected error while checking {friendly_name}: {e}")
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Prepare Feed List from Google Sheet tabs.")
     parser.add_argument("--sheet-name", required=True, help="Google Sheet file name")
