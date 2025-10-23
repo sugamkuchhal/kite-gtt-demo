@@ -54,7 +54,7 @@ jobs:
             gspread gspread-formatting kiteconnect pandas requests \
             retrying tqdm google-auth google-auth-oauthlib google-auth-httplib2 \
             webdriver-manager selenium pyotp yfinance oauth2client \
-            googleapiclient
+            google-api-python-client 
 
       - name: Recreate secret files (repo root + Mac path mirror)
         env:
