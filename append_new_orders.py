@@ -31,28 +31,9 @@ def main():
     # Exclude header row (row 0)
     data_rows = src_data[1:]
 
-    # Find first empty row in column A in destination
-    dest_colA = ws_dest.col_values(1)
-    first_empty_row = len(dest_colA) + 1  # 1-based index
-    for idx, val in enumerate(dest_colA, 1):
-        if not val.strip():
-            first_empty_row = idx
-            break
-
-    # Prepare the range to update in destination
-    num_rows = len(data_rows)
-    cell_list = ws_dest.range(
-        f"A{first_empty_row}:H{first_empty_row + num_rows - 1}"
-    )
-
-    # Flatten data_rows to fit into cell_list (row by row, col by col)
-    flat_values = [cell for row in data_rows for cell in row]
-    for cell, value in zip(cell_list, flat_values):
-        cell.value = value
-
-    # Update the destination sheet
-    ws_dest.update_cells(cell_list, value_input_option="USER_ENTERED")
-    print(f"✅ Copied {num_rows} rows from {SRC_TAB} to {DEST_TAB} starting at row {first_empty_row}.")
+    # Append all non-header rows to the destination in one call.
+    ws_dest.append_rows(data_rows, value_input_option="USER_ENTERED")
+    print(f"✅ Appended {len(data_rows)} rows from {SRC_TAB} to {DEST_TAB}.")
 
 if __name__ == "__main__":
     main()
