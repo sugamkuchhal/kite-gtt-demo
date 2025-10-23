@@ -1,7 +1,6 @@
 import gspread
 from datetime import datetime
 import argparse
-import time
 
 # --- CONFIGURATION ---
 CREDENTIALS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
@@ -28,6 +27,10 @@ def get_rows_with_action(data_rows, keyword):
             results.append((i, row))
     return results
 
+def find_next_empty_row(ws):
+    # Returns first empty row (after all data)
+    return len(ws.get_all_values()) + 1
+
 def main():
     args = parse_args()
     log("")
@@ -38,38 +41,31 @@ def main():
     red_ws = wb.worksheet(args.red_tab)
     yellow_ws = wb.worksheet(args.yellow_tab)
 
+    green_rows = green_ws.get_values("A2:O")
+    red_rows = red_ws.get_values("A2:O")
+    yellow_rows = yellow_ws.get_values("A2:O")
+
     log(f"⚙️ SCRIPT STARTED for {wb.title}")
 
-    # --- WRITE-ONLY POKE to force recalc (no reads) ---
-    token = f"TICKER-{int(time.time())}"
-    green_ws.update_acell("F1", token)  # Green: use an unused cell (F1)
-    log(f"POKE: Wrote '{token}' to Green!F1 to trigger recalc.")
-    red_ws.update_acell("F1", token)    # Red: as requested, use F1
-    log(f"POKE: Wrote '{token}' to Red!F1 to trigger recalc.")
+    # --- TOUCH A CELL IN EACH WORKSHEET TO FORCE RECALC ---
+    for ws, name in [(green_ws, "Green"), (red_ws, "Red"), (yellow_ws, "Yellow")]:
+        try:
+            val = ws.acell("A1").value
+            ws.update_acell("A1", val)
+            log(f"TOUCH: Triggered formula recalc for {name} Sheet.")
+        except Exception as e:
+            log(f"TOUCH: Could not touch A1 in {name} Sheet: {e}")
 
-    log("WAIT: Sleeping 30 seconds for Sheets to refresh/recalculate.")
-    time.sleep(30)
-
-    [green_rows, red_rows, yellow_rows] = BATCH_VALUES_GET(
-      ranges=[
-        f"{args.green_tab}!A2:O",
-        f"{args.red_tab}!A2:O",
-        f"{args.yellow_tab}!A2:O"
-      ]
-    )
-
-    # NEW: compute first empty row indices once (A1:O1 is header)
-    green_next  = len(green_rows)  + 2
-    red_next    = len(red_rows)    + 2
-    yellow_next = len(yellow_rows) + 2
+    import time
+    log("WAIT: Sleeping 10 seconds for Sheets to refresh/recalculate.")
+    time.sleep(10)
 
     # --------- 1. CLEAR ACTION SHEET ---------
     log("CLEAR TASK: Clearing Action Sheet")
     if yellow_rows:
         # Clear all except header
-        yellow_ws.batch_clear([f"A2:O{len(yellow_rows) + 1}"])
+        yellow_ws.batch_clear([f"A2:O{yellow_ws.row_count}"])
         log("CLEAR TASK: Rows cleared from Action Sheet")
-        yellow_next = 2  # IMPORTANT: after clearing, first empty row is row 2
     else:
         log("CLEAR TASK: Nothing to clear")
 
@@ -80,7 +76,7 @@ def main():
     yellow_update_rows = []
     red_update_idxs = []
     red_update_values = []
-
+    red_all = red_ws.get_all_values()
     for row_idx, green_row in updates:
         # Prepare Action/Yellow row (A, B, C, D, E, O)
         action_row = [green_row[0], green_row[1], green_row[2], green_row[3], green_row[4]] + [''] * 9 + [green_row[14]]
@@ -94,9 +90,8 @@ def main():
 
     # Batch append to Yellow
     if yellow_update_rows:
-        start_row = yellow_next
+        start_row = find_next_empty_row(yellow_ws)
         yellow_ws.update(range_name=f"A{start_row}:O{start_row+len(yellow_update_rows)-1}", values=yellow_update_rows, value_input_option='USER_ENTERED')
-        yellow_next += len(yellow_update_rows)
 
     # --- BATCHED: Batch update Red (all at once, not per-row) ---
     if red_update_idxs and red_update_values:
@@ -117,14 +112,12 @@ def main():
         red_insert_rows.append([green_row[0], green_row[1], green_row[2], green_row[3], green_row[4]])
 
     if yellow_insert_rows:
-        start_row = yellow_next
+        start_row = find_next_empty_row(yellow_ws)
         yellow_ws.update(range_name=f"A{start_row}:O{start_row+len(yellow_insert_rows)-1}", values=yellow_insert_rows, value_input_option='USER_ENTERED')
-        yellow_next += len(yellow_insert_rows)
 
     if red_insert_rows:
-        start_row = red_next
+        start_row = find_next_empty_row(red_ws)
         red_ws.update(range_name=f"A{start_row}:E{start_row+len(red_insert_rows)-1}", values=red_insert_rows, value_input_option='USER_ENTERED')
-        red_next += len(red_insert_rows)
 
     # --------- 4. BATCH DELETE TASK ---------
     log("DELETE TASK: Looking for 'Delete' rows in Red Sheet")
@@ -139,9 +132,8 @@ def main():
 
     # Append all delete actions to Yellow at once
     if yellow_delete_rows:
-        start_row = yellow_next
+        start_row = find_next_empty_row(yellow_ws)
         yellow_ws.update(range_name=f"A{start_row}:O{start_row+len(yellow_delete_rows)-1}", values=yellow_delete_rows, value_input_option='USER_ENTERED')
-        yellow_next += len(yellow_delete_rows)
 
     # --- BATCHED: Clear A–E of all relevant Red rows at once ---
     if red_delete_idxs:
@@ -153,9 +145,6 @@ def main():
     # Sort Red Sheet by A (ascending), if needed (API supports basic sorts)
     if red_delete_idxs:
         red_ws.sort((1, 'asc'))  # sort by Col A
-
-    log("WAIT: Sleeping 10 seconds for Sheets to refresh/recalculate.")
-    time.sleep(10)
 
     log("✅ SCRIPT COMPLETED.")
     log("")
