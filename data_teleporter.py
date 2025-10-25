@@ -29,9 +29,9 @@ FINAL_SHEET = "BANK_FINAL"
 # Tuning
 DEFAULT_PAGE_SIZE = 10000
 DEFAULT_BATCH_UPDATE_SIZE = 500
-DEFAULT_APPEND_CHUNK = 2000
+DEFAULT_APPEND_CHUNK = 500
 ROW_BUFFER = 100
-BATCH_SLEEP = 0.05
+BATCH_SLEEP = 0.15
 SAMPLE_VERIFICATION_COUNT = 100
 MAX_RETRIES = 5
 
@@ -409,22 +409,59 @@ def replicate_bank_new_to_dest(creds_path: str,
         i = 0
         while i < len(to_append):
             chunk = to_append[i:i+append_chunk]
-            wsd.append_rows(chunk, value_input_option="USER_ENTERED")
-            # best-effort detection of appended rows by scanning tail
+
+            # --- Retry append with backoff ---
+            last_err = None
+            for attempt in range(1, MAX_RETRIES + 1):
+                try:
+                    wsd.append_rows(chunk, value_input_option="USER_ENTERED")
+                    break
+                except Exception as e:
+                    last_err = e
+                    log(f"[WARN] append_rows attempt {attempt} failed: {e}")
+                    backoff_sleep(attempt)
+            if last_err and attempt == MAX_RETRIES:
+                raise last_err
+
+            # --- Determine where rows were appended (with retry for tail read) ---
             total_rows_now = wsd.row_count
             tail_start = max(1, total_rows_now - (len(chunk) + 200))
-            tail = wsd.get(f"A{tail_start}:B{total_rows_now}") or []
+
+            tail = None
+            last_err = None
+            for attempt in range(1, MAX_RETRIES + 1):
+                try:
+                    tail = wsd.get(f"A{tail_start}:B{total_rows_now}") or []
+                    break
+                except Exception as e:
+                    last_err = e
+                    log(f"[WARN] tail get attempt {attempt} failed: {e}")
+                    backoff_sleep(attempt)
+            if tail is None and last_err:
+                raise last_err
+
+            # --- Map appended rows back to their positions ---
             tail_map = {}
             for offset, r in enumerate(tail):
                 rownum = tail_start + offset
                 d = r[0] if len(r) > 0 else ""
                 s = r[1] if len(r) > 1 else ""
-                tail_map[normalize_key(d,s)] = rownum
-            mapped_rows = [tail_map[k] for k in [normalize_key(r[0] if len(r)>0 else "", r[1] if len(r)>1 else "") for r in chunk] if tail_map.get(normalize_key(r[0] if len(r)>0 else "", r[1] if len(r)>1 else ""))]
+                tail_map[normalize_key(d, s)] = rownum
+
+            mapped_rows = []
+            for r in chunk:
+                k = normalize_key(
+                    r[0] if len(r) > 0 else "",
+                    r[1] if len(r) > 1 else ""
+                )
+                if k in tail_map:
+                    mapped_rows.append(tail_map[k])
+
             if mapped_rows:
                 append_start = min(mapped_rows)
                 append_end = max(mapped_rows)
                 append_ranges_for_formula.append((append_start, append_end))
+
             i += append_chunk
             time.sleep(BATCH_SLEEP)
 
