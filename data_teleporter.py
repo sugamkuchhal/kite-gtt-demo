@@ -19,7 +19,7 @@ CREDS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
 SOURCE_SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1TX4Q8YG0-d2_L1YOhvb9OYDgklvHj3eFK76JN7Pdavg"
 
 # Destination spreadsheet name (as in existing data_teleporter config)
-DEST_SPREADSHEET_NAME = "https://docs.google.com/spreadsheets/d/1IZJYejcWZN72f_3Fm1L2IHgbjVxOthTfqwnsnynCcXk"
+DEST_SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1IZJYejcWZN72f_3Fm1L2IHgbjVxOthTfqwnsnynCcXk"
 
 # Sheet/tab names (as we discussed)
 INC_SHEET = "BANK_INC"
@@ -185,10 +185,10 @@ def read_rows_by_indices(client: gspread.client.Client, spreadsheet_url: str, sh
             res[start + offset] = row
     return res
 
-def delete_rows_descending(client: gspread.client.Client, spreadsheet_name: str, sheet_name: str, row_indices: List[int]):
+def delete_rows_descending(client: gspread.client.Client, spreadsheet_url: str, sheet_name: str, row_indices: List[int]):
     if not row_indices:
         return
-    ss = client.open(spreadsheet_name)
+    ss = client.open_by_url(spreadsheet_url)
     ws = ss.worksheet(sheet_name)
     unique_desc = sorted(set(row_indices), reverse=True)
     for r in unique_desc:
@@ -198,11 +198,11 @@ def delete_rows_descending(client: gspread.client.Client, spreadsheet_name: str,
         except Exception as e:
             log(f"[WARN] delete row {r} failed: {e}")
 
-def batch_overwrite_rows(client: gspread.client.Client, spreadsheet_name: str, sheet_name: str,
+def batch_overwrite_rows(client: gspread.client.Client, spreadsheet_url: str, sheet_name: str,
                          updates: List[Tuple[int, List[Any]]], batch_size: int = DEFAULT_BATCH_UPDATE_SIZE, last_col: str = "G"):
     if not updates:
         return
-    ss = client.open(spreadsheet_name)
+    ss = client.open_by_url(spreadsheet_url)
     ws = ss.worksheet(sheet_name)
     updates_sorted = sorted(updates, key=lambda x: x[0])
     groups = []
@@ -236,11 +236,11 @@ def batch_overwrite_rows(client: gspread.client.Client, spreadsheet_name: str, s
             s_idx = e_idx
             time.sleep(BATCH_SLEEP)
 
-def batch_append_rows(client: gspread.client.Client, spreadsheet_name: str, sheet_name: str,
+def batch_append_rows(client: gspread.client.Client, spreadsheet_url: str, sheet_name: str,
                       rows_to_append: List[List[Any]], append_chunk: int = DEFAULT_APPEND_CHUNK):
     if not rows_to_append:
         return
-    ss = client.open(spreadsheet_name)
+    ss = client.open_by_url(spreadsheet_url)
     ws = ss.worksheet(sheet_name)
     i = 0
     total = len(rows_to_append)
@@ -254,11 +254,11 @@ def batch_append_rows(client: gspread.client.Client, spreadsheet_name: str, shee
         i += append_chunk
         time.sleep(BATCH_SLEEP)
 
-def copy_formulas_hi_where_blank(client: gspread.client.Client, spreadsheet_name: str, sheet_name: str,
+def copy_formulas_hi_where_blank(client: gspread.client.Client, spreadsheet_url: str, sheet_name: str,
                                  target_ranges: List[Tuple[int,int]]):
     if not target_ranges:
         return
-    ss = client.open(spreadsheet_name)
+    ss = client.open_by_url(spreadsheet_url)
     ws = ss.worksheet(sheet_name)
     try:
         template = ws.get("H2:I2", value_render_option="FORMULA") or [["",""]]
@@ -295,7 +295,7 @@ def copy_formulas_hi_where_blank(client: gspread.client.Client, spreadsheet_name
 # ----------------- orchestrator -----------------
 def replicate_bank_new_to_dest(creds_path: str,
                                source_spreadsheet_url: str,
-                               dest_spreadsheet_name: str,
+                               dest_spreadsheet_url: str,
                                inc_sheet_name: str = INC_SHEET,
                                new_sheet_name: str = NEW_SHEET,
                                final_sheet_name: str = FINAL_SHEET,
@@ -346,7 +346,7 @@ def replicate_bank_new_to_dest(creds_path: str,
 
     # 4) locate keys in destination
     log("[INFO] locating keys in destination BANK_FINAL ...")
-    dest_found = find_keys_in_sheet_paged(client, dest_spreadsheet_name, final_sheet_name, list(payload_map.keys()), page_size=page_size)
+    dest_found = find_keys_in_sheet_paged(client, dest_spreadsheet_url, final_sheet_name, list(payload_map.keys()), page_size=page_size)
 
     to_overwrite = []
     to_append = []
@@ -373,10 +373,10 @@ def replicate_bank_new_to_dest(creds_path: str,
     # 5) delete duplicates descending
     if duplicates_to_delete:
         log("[ACTION] deleting duplicate extra rows (descending indices)...")
-        delete_rows_descending(client, dest_spreadsheet_name, final_sheet_name, duplicates_to_delete)
+        delete_rows_descending(client, dest_spreadsheet_url, final_sheet_name, duplicates_to_delete)
         # re-locate canonical indices after deletes
         log("[INFO] re-locating canonical indices after deletes...")
-        dest_found_after = find_keys_in_sheet_paged(client, dest_spreadsheet_name, final_sheet_name, list(payload_map.keys()), page_size=page_size)
+        dest_found_after = find_keys_in_sheet_paged(client, dest_spreadsheet_url, final_sheet_name, list(payload_map.keys()), page_size=page_size)
         new_overwrite = []
         overwrite_ranges_for_formula = []
         for key, src_row in payload_map.items():
@@ -389,7 +389,7 @@ def replicate_bank_new_to_dest(creds_path: str,
         log(f"[INFO] confirmed {len(to_overwrite)} overwrite targets after cleanup.")
 
     # 6) ensure rows for appends
-    ss_dest = client.open(dest_spreadsheet_name)
+    ss_dest = client.open_by_url(dest_spreadsheet_url)
     ws_dest = ss_dest.worksheet(final_sheet_name)
     dest_row_count = ws_dest.row_count
     projected = dest_row_count + len(to_append) + ROW_BUFFER
@@ -398,13 +398,13 @@ def replicate_bank_new_to_dest(creds_path: str,
     # 7) perform overwrites
     if to_overwrite:
         log(f"[ACTION] performing {len(to_overwrite)} overwrites...")
-        batch_overwrite_rows(client, dest_spreadsheet_name, final_sheet_name, to_overwrite, batch_size=batch_update_size, last_col="G")
+        batch_overwrite_rows(client, dest_spreadsheet_url, final_sheet_name, to_overwrite, batch_size=batch_update_size, last_col="G")
 
     # 8) perform appends (and capture appended ranges for formula copy)
     if to_append:
         log(f"[ACTION] appending {len(to_append)} rows...")
         # Do chunked append; after each chunk attempt to determine appended range
-        ssd = client.open(dest_spreadsheet_name)
+        ssd = client.open_by_url(dest_spreadsheet_url)
         wsd = ssd.worksheet(final_sheet_name)
         i = 0
         while i < len(to_append):
@@ -442,7 +442,7 @@ def replicate_bank_new_to_dest(creds_path: str,
                 cs, ce = s, e
         merged.append((cs, ce))
         log(f"[ACTION] re-applying H:I formulas into {len(merged)} ranges (only where blank)...")
-        copy_formulas_hi_where_blank(client, dest_spreadsheet_name, final_sheet_name, merged)
+        copy_formulas_hi_where_blank(client, dest_spreadsheet_url, final_sheet_name, merged)
 
     # 10) sample verification
     sample_keys = list(payload_map.keys())
@@ -453,14 +453,14 @@ def replicate_bank_new_to_dest(creds_path: str,
         sample = []
     mismatches = 0
     for k in sample:
-        dest_map_now = find_keys_in_sheet_paged(client, dest_spreadsheet_name, final_sheet_name, [k], page_size=page_size)
+        dest_map_now = find_keys_in_sheet_paged(client, dest_spreadsheet_url, final_sheet_name, [k], page_size=page_size)
         dest_idxs_now = dest_map_now.get(k, [])
         if not dest_idxs_now:
             log(f"[ERROR] verification: key {k} missing in destination after write.")
             mismatches += 1
             continue
         canonical = min(dest_idxs_now)
-        ss = client.open(dest_spreadsheet_name)
+        ss = client.open_by_url(dest_spreadsheet_url)
         ws = ss.worksheet(final_sheet_name)
         rng = f"A{canonical}:G{canonical}"
         dest_row = (ws.get(rng) or [[]])[0] if (ws.get(rng) or [[]]) else []
@@ -482,7 +482,7 @@ if __name__ == "__main__":
         replicate_bank_new_to_dest(
             creds_path=CREDS_PATH,
             source_spreadsheet_url=SOURCE_SPREADSHEET_URL,
-            dest_spreadsheet_name=DEST_SPREADSHEET_NAME,
+            dest_spreadsheet_url=DEST_SPREADSHEET_URL,
             inc_sheet_name=INC_SHEET,
             new_sheet_name=NEW_SHEET,
             final_sheet_name=FINAL_SHEET,
