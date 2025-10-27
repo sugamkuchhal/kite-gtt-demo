@@ -2,7 +2,7 @@ name: Refresh Kite Token
 
 on:
   schedule:
-    - cron: "0 19 * * 1-5"   # 12:30 AM IST = 19:00 UTC previous day
+    - cron: "0 19 * * 0-4"   # 12:30 AM IST = 19:00 UTC previous day
   workflow_dispatch:
 
 permissions:
