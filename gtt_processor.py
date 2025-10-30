@@ -391,14 +391,23 @@ def safe_api_call(func, *args, max_retries=5, base_delay=1, **kwargs):
     return None
 
 class SheetStatusManager:
-    def __init__(self, sheet):
+    def __init__(self, sheet, cached_headers=None):
         self.sheet = sheet
-        self.headers = None
+        self.headers = cached_headers
         self.status_col = None
         self.status_updates = {}
         self._load_headers()
     
     def _load_headers(self):
+        if self.headers:
+            try:
+                self.status_col = self.headers.index("STATUS") + 1
+            except ValueError:
+                self.status_col = len(self.headers) + 1
+                safe_api_call(self.sheet.update_cell, 1, self.status_col, "STATUS")
+                self.headers.append("STATUS")
+            return
+
         try:
             self.headers = safe_api_call(self.sheet.row_values, 1)
             try:
@@ -411,7 +420,7 @@ class SheetStatusManager:
             logger.error(f"Failed to load headers: {e}")
             self.headers = []
             self.status_col = 1
-    
+
     def queue_status_update(self, row_number, status_text):
         self.status_updates[row_number] = status_text
     
@@ -466,7 +475,7 @@ def process_gtt_batch(kite, start_row, instruction_sheet, data_sheet):
     conflict_rows = []
     data_header = data_sheet.row_values(1)
     
-    status_manager = SheetStatusManager(instruction_sheet)
+    status_manager = SheetStatusManager(instruction_sheet, cached_headers=instruction_sheet.row_values(1))
 
     for idx, instr in enumerate(instructions):
         row_num = start_row + idx
@@ -650,9 +659,12 @@ def main(instruction_sheet=None, data_sheet=None, kite=None):
     if kite is None:
         kite = get_kite()
 
-    headers = instruction_sheet.row_values(1)
+    # --- cache header and column reads once ---
+    cached_headers = instruction_sheet.row_values(1)
+    cached_col_a_vals = instruction_sheet.col_values(1)
+
     try:
-        status_col_idx = headers.index("STATUS") + 1  # 1-based indexing for Google Sheets
+        status_col_idx = cached_headers.index("STATUS") + 1  # 1-based indexing for Google Sheets
 
         # Determine last data row cheaply by checking column A's filled rows.
         # This avoids get_all_values() and avoids relying solely on row_count.
@@ -684,8 +696,7 @@ def main(instruction_sheet=None, data_sheet=None, kite=None):
     try:
         # Short pause to let the Sheets API settle, then re-read column A for an up-to-date count
         time.sleep(0.2)
-        col_a_vals = instruction_sheet.col_values(1)
-        last_data_row = max(len(col_a_vals), 1)
+        last_data_row = max(len(cached_col_a_vals), 1)
     except Exception:
         # Defensive fallback if col_values fails
         last_data_row = instruction_sheet.row_count
