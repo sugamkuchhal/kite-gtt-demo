@@ -759,6 +759,10 @@ def main(instruction_sheet=None, data_sheet=None, kite=None):
         for cr in all_conflict_rows:
             logger.warning(f"Conflict row: {cr}")
 
+    # --- Pause after full processing run ---
+    logger.info("✅ GTT processing complete. Pausing for 60 seconds before continuing...")
+    time.sleep(60)
+
 def run_fetch_all_gtts_script():
     try:
         logger.info("Running fetch_all_gtts.py...")
