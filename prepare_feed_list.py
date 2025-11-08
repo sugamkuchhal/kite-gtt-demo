@@ -114,6 +114,7 @@ def prepare_feed_list(sheet_name, source_tab, dest_tab):
     print("🔀 Step 5: Final sort by Source (C), then Ticker (B).")
 
     print("✅ Feed list preparation complete.")
+    time.sleep(60)
     print("")
 
 # ------------------ POST-CHECKS: specific cells & simple prints ------------------
