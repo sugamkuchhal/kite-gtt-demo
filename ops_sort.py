@@ -154,6 +154,7 @@ def main():
         red_ws.sort((1, 'asc'))  # sort by Col A
 
     log("✅ SCRIPT COMPLETED.")
+    time.sleep(60)
     log("")
 
 if __name__ == "__main__":
