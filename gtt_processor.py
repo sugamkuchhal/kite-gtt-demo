@@ -495,13 +495,9 @@ def process_gtt_batch(kite, start_row, instruction_sheet, data_sheet):
             action = determine_action(raw_action)
             side = parse_type_to_side(raw_type)
             price_float = float(instr.get("GTT PRICE", 0) or 0)
-            tick_size_float = float(instr.get("TICK SIZE", 0) or 0)
             
             trigger_price = price_float
-            if side.upper() == "BUY":
-                limit_price = price_float + tick_size_float
-            else:
-                limit_price = price_float - tick_size_float
+            limit_price = price_float
                 
             last_price_float = float(instr.get("LIVE PRICE", 0) or 0)
 
