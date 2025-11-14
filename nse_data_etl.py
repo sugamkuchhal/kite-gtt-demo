@@ -176,11 +176,9 @@ def process_and_update():
                     filled_row[cidx] = prev_val
                     print_fill_log(symbol, date_val, cname, prev_val, prev_date)
         # TYPE as value (lookup from TICKERS)
-        type_value = ticker_type_map.get(symbol, "")
         gs_values = [
             date_val, symbol,
-            filled_row[2], filled_row[3], filled_row[4], filled_row[5],
-            type_value
+            filled_row[2], filled_row[3], filled_row[4], filled_row[5]
         ]
         key = (gs_values[0], gs_values[1])
         if key in idx_by_date_sym:
@@ -200,7 +198,7 @@ def process_and_update():
                 if batch:
                     indices, rows_block = zip(*batch)
                     start, end = indices[0], indices[-1]
-                    ws_new.update(f"A{start}:G{end}", list(rows_block))
+                    ws_new.update(f"A{start}:F{end}", list(rows_block))
                 batch = [(idx, vals)]
             prev_idx = idx
         if batch:
@@ -229,6 +227,9 @@ def process_and_update():
 if __name__ == "__main__":
     process_and_update()
 
+    print("[MAIN] Waiting 180 seconds before post-checks...")
+    import time
+    time.sleep(180)
 
     # ------------------ POST-CHECKS: simple prints against DEST_SPREADSHEET_NAME/BANK_FINAL ----
     def _check_cell_and_log(spreadsheet, tab_name, cell_addr, friendly_name=None):
