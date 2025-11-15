@@ -655,6 +655,16 @@ def main(instruction_sheet=None, data_sheet=None, kite=None):
     if kite is None:
         kite = get_kite()
 
+    try:
+        k1_val = instruction_sheet.acell("K1").value
+        k1_num = float(k1_val) if k1_val not in (None, "") else 0
+        if k1_num <= 0:
+            logger.info(f"K1 <= 0 ({k1_val}) → Skipping entire GTT processing.")
+            return
+    except Exception as e:
+        logger.error(f"Failed to read K1 → Skipping process. Error: {e}")
+        return
+    
     # --- cache header and column reads once ---
     cached_headers = instruction_sheet.row_values(1)
     cached_col_a_vals = instruction_sheet.col_values(1)
