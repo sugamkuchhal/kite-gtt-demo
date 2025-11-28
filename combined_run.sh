@@ -39,10 +39,6 @@ python3 ops_sort.py --sheet-name="SARAS D G C - RTP (Reverse Trigger Point Salva
 # python3 ops_sort.py --sheet-name="SARAS D M B - Consolidated BreakOut with BOH" --green-tab="MKT_List" --red-tab="OLD_MKT_List" --yellow-tab="Action_List"
 
 echo "Running: GTT Processor"
-python3 gtt_processor.py --sheet-id "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s" --sheet-name "DEL_GTT_INS"
-python3 gtt_processor.py --sheet-id "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s" --sheet-name "INS_GTT_INS"
-python3 gtt_processor.py --sheet-id "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s" --sheet-name "GTT_INS"
-python3 gtt_processor.py --sheet-id "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s" --sheet-name "ALTER_GTT_INS"
-python3 gtt_processor.py --sheet-id "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s" --sheet-name "INS_GTT_INS"
+bash home_run.sh
 
 echo "✅ All tasks completed."
