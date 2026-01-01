@@ -19,7 +19,7 @@ if python3 "$(dirname "$0")/is_trigger_true.py" | grep -qi true; then
     python3 ops_sort.py --sheet-name="SARAS W M B - KWK (Deep Bear Reversal)" --green-tab="SIP_REG_List" --red-tab="OLD_SIP_REG_List" --yellow-tab="Action_SIP_REG_List"
     python3 ops_sort_sip_reg.py --sheet-name "SARAS W M B - KWK (Deep Bear Reversal)" --action-sheet "OLD_SIP_REG_List" --special-target-sheet-file "SARAS Portfolio - Stocks" --special-target-sheet "SPECIAL_TARGET_KWK_SIP_REG" --uncheck
 
-    python3 gtt_processor.py --sheet-id "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s" --sheet-name "MKT_INS" --market_order
+    python3 gtt_processor.py --sheet-id "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s" --sheet-name "MKT_INS" --market-order
     echo ""
 fi
 
