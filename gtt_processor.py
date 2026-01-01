@@ -28,6 +28,7 @@ import datetime
 import hashlib
 import random
 import socket
+import datetime
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
@@ -37,6 +38,17 @@ logger.setLevel(logging.DEBUG)
 logger.info(f"Using BATCH_SIZE={BATCH_SIZE}")
 
 # --------------------------- Extracted Functions --------------------------
+
+def resolve_order_variety():
+    now = datetime.datetime.now().time()
+    market_open = datetime.time(9, 15)
+    market_close = datetime.time(15, 30)
+
+    if market_open <= now <= market_close:
+        return "regular"
+    return "amo"
+
+
 
 def process_place(
     status_manager, row_num, matches, exchange, symbol, side, quantity,
@@ -391,23 +403,14 @@ def safe_api_call(func, *args, max_retries=5, base_delay=1, **kwargs):
     return None
 
 class SheetStatusManager:
-    def __init__(self, sheet, cached_headers=None):
+    def __init__(self, sheet):
         self.sheet = sheet
-        self.headers = cached_headers
+        self.headers = None
         self.status_col = None
         self.status_updates = {}
         self._load_headers()
     
     def _load_headers(self):
-        if self.headers:
-            try:
-                self.status_col = self.headers.index("STATUS") + 1
-            except ValueError:
-                self.status_col = len(self.headers) + 1
-                safe_api_call(self.sheet.update_cell, 1, self.status_col, "STATUS")
-                self.headers.append("STATUS")
-            return
-
         try:
             self.headers = safe_api_call(self.sheet.row_values, 1)
             try:
@@ -420,7 +423,7 @@ class SheetStatusManager:
             logger.error(f"Failed to load headers: {e}")
             self.headers = []
             self.status_col = 1
-
+    
     def queue_status_update(self, row_number, status_text):
         self.status_updates[row_number] = status_text
     
@@ -475,7 +478,7 @@ def process_gtt_batch(kite, start_row, instruction_sheet, data_sheet):
     conflict_rows = []
     data_header = data_sheet.row_values(1)
     
-    status_manager = SheetStatusManager(instruction_sheet, cached_headers=instruction_sheet.row_values(1))
+    status_manager = SheetStatusManager(instruction_sheet)
 
     for idx, instr in enumerate(instructions):
         row_num = start_row + idx
@@ -559,35 +562,51 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
     ix_ticker = headers.index("TICKER")
     ix_units = headers.index("UNITS")
     ix_action = headers.index("ACTION")
-    ix_method = headers.index("METHOD")
     ix_status = headers.index("STATUS")
 
     for row_num, row in enumerate(rows[1:], start=2):
         try:
-            ticker = row[ix_ticker].strip()
-            units = int(float(row[ix_units].strip()))
-            side = row[ix_action].strip().upper()
-            method = row[ix_method].strip().upper() or "CNC"
+
+            raw_ticker = row[ix_ticker].strip()
+            exchange, symbol = parse_ticker(raw_ticker)
+
+            units = _int_from_number_like(row[ix_units])
+            
+            if units <= 0:
+                update_status(status_manager, row_num, "⏭ skipped: invalid or empty UNITS")
+                continue
+
+            side = normalize_type_for_matching(row[ix_action])
+
+            if side not in ("BUY", "SELL"):
+                update_status(
+                    status_manager,
+                    row_num,
+                    f"❌ invalid ACTION for MARKET: {row[ix_action]}"
+                )
+                continue
 
             # Skip if STATUS already filled
             if row[ix_status]:
                 continue
 
-            product = "MIS" if "MIS" in method else "CNC"
+            product = "CNC"
+            variety = resolve_order_variety()
 
             resp = safe_api_call(
                 kite.place_order,
-                tradingsymbol=ticker,
-                exchange="NSE",
+                tradingsymbol=symbol,
+                exchange=exchange,
                 transaction_type=side,
                 quantity=units,
                 order_type="MARKET",
                 product=product,
-                variety="regular",
+                variety=variety,
                 validity="DAY",
             )
+
             update_status(status_manager, row_num, "✅ market placed")
-            logger.info(f"Row {row_num}: MARKET {side} {ticker} x{units} placed")
+            logger.info(f"Row {row_num}: MARKET {side} {symbol} x{units} placed")
 
         except Exception as e:
             update_status(status_manager, row_num, f"❌ error: {e}")
@@ -664,13 +683,10 @@ def main(instruction_sheet=None, data_sheet=None, kite=None):
     except Exception as e:
         logger.error(f"Failed to read K1 → Skipping process. Error: {e}")
         return
-    
-    # --- cache header and column reads once ---
-    cached_headers = instruction_sheet.row_values(1)
-    cached_col_a_vals = instruction_sheet.col_values(1)
 
+    headers = instruction_sheet.row_values(1)
     try:
-        status_col_idx = cached_headers.index("STATUS") + 1  # 1-based indexing for Google Sheets
+        status_col_idx = headers.index("STATUS") + 1  # 1-based indexing for Google Sheets
 
         # Determine last data row cheaply by checking column A's filled rows.
         # This avoids get_all_values() and avoids relying solely on row_count.
@@ -702,7 +718,8 @@ def main(instruction_sheet=None, data_sheet=None, kite=None):
     try:
         # Short pause to let the Sheets API settle, then re-read column A for an up-to-date count
         time.sleep(0.2)
-        last_data_row = max(len(cached_col_a_vals), 1)
+        col_a_vals = instruction_sheet.col_values(1)
+        last_data_row = max(len(col_a_vals), 1)
     except Exception:
         # Defensive fallback if col_values fails
         last_data_row = instruction_sheet.row_count
@@ -765,10 +782,6 @@ def main(instruction_sheet=None, data_sheet=None, kite=None):
         for cr in all_conflict_rows:
             logger.warning(f"Conflict row: {cr}")
 
-    # --- Pause after full processing run ---
-    logger.info("✅ GTT processing complete. Pausing for 60 seconds before continuing...")
-    time.sleep(60)
-
 def run_fetch_all_gtts_script():
     try:
         logger.info("Running fetch_all_gtts.py...")
@@ -796,6 +809,19 @@ if __name__ == "__main__":
     kite = get_kite()
     
     if args.market_order:
+
+        # --- CLEAR STATUS COLUMN FOR MARKET MODE ---
+        headers = instruction_sheet.row_values(1)
+        try:
+            status_col_idx = headers.index("STATUS") + 1
+            last_row = instruction_sheet.row_count
+            col_letter = colnum_to_a1(status_col_idx)
+            clear_range = f"{col_letter}2:{col_letter}{last_row}"
+            instruction_sheet.batch_clear([clear_range])
+            logger.info(f"Cleared STATUS column for MARKET mode: {clear_range}")
+        except ValueError:
+            logger.warning("STATUS column not found; skipping clear step")
+
         # Process MKT_INS sheet directly
         status_manager = SheetStatusManager(instruction_sheet)
         process_market_sheet(kite, instruction_sheet, status_manager, logger)
