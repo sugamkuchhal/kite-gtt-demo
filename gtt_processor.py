@@ -301,7 +301,7 @@ def _int_from_number_like(x):
     rounded = int(round(f))
     return rounded
 
-def _floats_equal(a, b, tol=0.01):
+def _floats_equal(a, b, tol):
     """
     Compare two numeric-like values with tolerance (default 0.01).
     Missing/unparsable values are treated as 0.0 to keep behavior consistent.
@@ -352,6 +352,7 @@ def rows_match_4_elements(instr_row, data_row):
         return False
 
     # GTT PRICE: allow small tolerance (0.01)
+    tick = _parse_number_safe(instr_row.get("TICK SIZE")) or 0.01
     if not _floats_equal(instr_row.get("GTT PRICE", 0), data_row.get("GTT PRICE", 0), tol=0.01):
         return False
 
@@ -517,7 +518,12 @@ def process_gtt_batch(kite, start_row, instruction_sheet, data_sheet):
             side = parse_type_to_side(raw_type)
             price_float = float(instr.get("GTT PRICE", 0) or 0)
             tick_size   = float(instr.get("TICK SIZE", 0) or 0)
-                        
+
+            if tick_size <= 0:
+                update_status(status_manager, row_num, "❌ invalid TICK SIZE")
+                failed_rows.append({"row_number": row_num, "reason": "Invalid TICK SIZE"})
+                continue
+            
             trigger_price = price_float
             limit_price = apply_buffer_and_round(price_float, side, tick_size)
                 
@@ -626,6 +632,8 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
             variety = resolve_order_variety()
 
             final_price = apply_buffer_and_round(price, side, tick_size)
+
+            # NOTE: MARKET flow uses buffered LIMIT orders intentionally
 
             resp = safe_api_call(
                 kite.place_order,
