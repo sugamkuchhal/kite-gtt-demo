@@ -37,6 +37,9 @@ logger.setLevel(logging.DEBUG)
 
 logger.info(f"Using BATCH_SIZE={BATCH_SIZE}")
 
+PRICE_BUFFER_PCT = 0.5  # percent
+
+
 # --------------------------- Extracted Functions --------------------------
 
 def resolve_order_variety():
@@ -59,6 +62,11 @@ def _float_from_number_like(x):
     except Exception:
         return None
 
+def apply_buffer_and_round(base_price, side, tick_size):
+    buffer_mult = 1 + (PRICE_BUFFER_PCT / 100.0) if side == "BUY" else 1 - (PRICE_BUFFER_PCT / 100.0)
+    buffered = base_price * buffer_mult
+    rounded = round(buffered / tick_size) * tick_size
+    return round(rounded, 10)
 
 def process_place(
     status_manager, row_num, matches, exchange, symbol, side, quantity,
@@ -76,10 +84,10 @@ def process_place(
         "quantity": quantity,
         "order_type": "LIMIT",
         "product": "CNC",
-        "price": round(limit_price, 2),
+        "price": limit_price,
         "validity": "DAY",
         "disclosed_quantity": 0,
-        "trigger_price": round(trigger_price, 2),
+        "trigger_price": trigger_price,
         "tag": method,
     }
 
@@ -508,9 +516,10 @@ def process_gtt_batch(kite, start_row, instruction_sheet, data_sheet):
             action = determine_action(raw_action)
             side = parse_type_to_side(raw_type)
             price_float = float(instr.get("GTT PRICE", 0) or 0)
-            
+            tick_size   = float(instr.get("TICK SIZE", 0) or 0)
+                        
             trigger_price = price_float
-            limit_price = price_float
+            limit_price = apply_buffer_and_round(price_float, side, tick_size)
                 
             last_price_float = float(instr.get("LIVE PRICE", 0) or 0)
 
@@ -572,8 +581,9 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
     ix_ticker = headers.index("TICKER")
     ix_units = headers.index("UNITS")
     ix_action = headers.index("ACTION")
+    ix_price     = headers.index("PRICE")
+    ix_tick_size = headers.index("TICK SIZE")
     ix_status = headers.index("STATUS")
-    ix_price = headers.index("PRICE")
 
 
     for row_num, row in enumerate(rows[1:], start=2):
@@ -591,6 +601,11 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
             price = _float_from_number_like(row[ix_price])
             if not price or price <= 0:
                 update_status(status_manager, row_num, "❌ invalid or empty PRICE")
+                continue
+
+            tick_size = _float_from_number_like(row[ix_tick_size])
+            if not tick_size or tick_size <= 0:
+                update_status(status_manager, row_num, "❌ invalid or empty TICK SIZE")
                 continue
 
             side = normalize_type_for_matching(row[ix_action])
@@ -617,7 +632,7 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
                 transaction_type=side,
                 quantity=units,
                 order_type="LIMIT",
-                price=price,
+                price=final_price,
                 product="CNC",
                 variety=variety,
                 validity="DAY",
