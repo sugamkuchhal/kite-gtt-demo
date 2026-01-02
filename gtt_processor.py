@@ -48,6 +48,16 @@ def resolve_order_variety():
         return "regular"
     return "amo"
 
+def _float_from_number_like(x):
+    try:
+        if x is None:
+            return None
+        x = str(x).replace(",", "").strip()
+        if not x:
+            return None
+        return float(x)
+    except Exception:
+        return None
 
 
 def process_place(
@@ -563,6 +573,8 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
     ix_units = headers.index("UNITS")
     ix_action = headers.index("ACTION")
     ix_status = headers.index("STATUS")
+    ix_price = headers.index("PRICE")
+
 
     for row_num, row in enumerate(rows[1:], start=2):
         try:
@@ -574,6 +586,11 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
             
             if units <= 0:
                 update_status(status_manager, row_num, "⏭ skipped: invalid or empty UNITS")
+                continue
+
+            price = _float_from_number_like(row[ix_price])
+            if not price or price <= 0:
+                update_status(status_manager, row_num, "❌ invalid or empty PRICE")
                 continue
 
             side = normalize_type_for_matching(row[ix_action])
@@ -599,8 +616,9 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
                 exchange=exchange,
                 transaction_type=side,
                 quantity=units,
-                order_type="MARKET",
-                product=product,
+                order_type="LIMIT",
+                price=price,
+                product="CNC",
                 variety=variety,
                 validity="DAY",
             )
