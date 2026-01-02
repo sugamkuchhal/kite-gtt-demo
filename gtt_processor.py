@@ -625,6 +625,8 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
             product = "CNC"
             variety = resolve_order_variety()
 
+            final_price = apply_buffer_and_round(price, side, tick_size)
+
             resp = safe_api_call(
                 kite.place_order,
                 tradingsymbol=symbol,
