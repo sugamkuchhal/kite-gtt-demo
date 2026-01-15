@@ -37,9 +37,6 @@ logger.setLevel(logging.DEBUG)
 
 logger.info(f"Using BATCH_SIZE={BATCH_SIZE}")
 
-PRICE_BUFFER_PCT = 0.5  # percent
-
-
 # --------------------------- Extracted Functions --------------------------
 
 def resolve_order_variety():
@@ -51,22 +48,7 @@ def resolve_order_variety():
         return "regular"
     return "amo"
 
-def _float_from_number_like(x):
-    try:
-        if x is None:
-            return None
-        x = str(x).replace(",", "").strip()
-        if not x:
-            return None
-        return float(x)
-    except Exception:
-        return None
 
-def apply_buffer_and_round(base_price, side, tick_size):
-    buffer_mult = 1 + (PRICE_BUFFER_PCT / 100.0) if side == "BUY" else 1 - (PRICE_BUFFER_PCT / 100.0)
-    buffered = base_price * buffer_mult
-    rounded = round(buffered / tick_size) * tick_size
-    return round(rounded, 10)
 
 def process_place(
     status_manager, row_num, matches, exchange, symbol, side, quantity,
@@ -84,10 +66,10 @@ def process_place(
         "quantity": quantity,
         "order_type": "LIMIT",
         "product": "CNC",
-        "price": limit_price,
+        "price": round(limit_price, 2),
         "validity": "DAY",
         "disclosed_quantity": 0,
-        "trigger_price": trigger_price,
+        "trigger_price": round(trigger_price, 2),
         "tag": method,
     }
 
@@ -301,7 +283,7 @@ def _int_from_number_like(x):
     rounded = int(round(f))
     return rounded
 
-def _floats_equal(a, b, tol):
+def _floats_equal(a, b, tol=0.01):
     """
     Compare two numeric-like values with tolerance (default 0.01).
     Missing/unparsable values are treated as 0.0 to keep behavior consistent.
@@ -352,7 +334,6 @@ def rows_match_4_elements(instr_row, data_row):
         return False
 
     # GTT PRICE: allow small tolerance (0.01)
-    tick = _parse_number_safe(instr_row.get("TICK SIZE")) or 0.01
     if not _floats_equal(instr_row.get("GTT PRICE", 0), data_row.get("GTT PRICE", 0), tol=0.01):
         return False
 
@@ -517,15 +498,9 @@ def process_gtt_batch(kite, start_row, instruction_sheet, data_sheet):
             action = determine_action(raw_action)
             side = parse_type_to_side(raw_type)
             price_float = float(instr.get("GTT PRICE", 0) or 0)
-            tick_size   = float(instr.get("TICK SIZE", 0) or 0)
-
-            if tick_size <= 0:
-                update_status(status_manager, row_num, "❌ invalid TICK SIZE")
-                failed_rows.append({"row_number": row_num, "reason": "Invalid TICK SIZE"})
-                continue
             
             trigger_price = price_float
-            limit_price = apply_buffer_and_round(price_float, side, tick_size)
+            limit_price = price_float
                 
             last_price_float = float(instr.get("LIVE PRICE", 0) or 0)
 
@@ -587,10 +562,7 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
     ix_ticker = headers.index("TICKER")
     ix_units = headers.index("UNITS")
     ix_action = headers.index("ACTION")
-    ix_price     = headers.index("PRICE")
-    ix_tick_size = headers.index("TICK SIZE")
     ix_status = headers.index("STATUS")
-
 
     for row_num, row in enumerate(rows[1:], start=2):
         try:
@@ -602,16 +574,6 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
             
             if units <= 0:
                 update_status(status_manager, row_num, "⏭ skipped: invalid or empty UNITS")
-                continue
-
-            price = _float_from_number_like(row[ix_price])
-            if not price or price <= 0:
-                update_status(status_manager, row_num, "❌ invalid or empty PRICE")
-                continue
-
-            tick_size = _float_from_number_like(row[ix_tick_size])
-            if not tick_size or tick_size <= 0:
-                update_status(status_manager, row_num, "❌ invalid or empty TICK SIZE")
                 continue
 
             side = normalize_type_for_matching(row[ix_action])
@@ -631,19 +593,14 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
             product = "CNC"
             variety = resolve_order_variety()
 
-            final_price = apply_buffer_and_round(price, side, tick_size)
-
-            # NOTE: MARKET flow uses buffered LIMIT orders intentionally
-
             resp = safe_api_call(
                 kite.place_order,
                 tradingsymbol=symbol,
                 exchange=exchange,
                 transaction_type=side,
                 quantity=units,
-                order_type="LIMIT",
-                price=final_price,
-                product="CNC",
+                order_type="MARKET",
+                product=product,
                 variety=variety,
                 validity="DAY",
             )
