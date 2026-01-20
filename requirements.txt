@@ -1,0 +1,17 @@
+gspread
+gspread-formatting
+kiteconnect
+pandas
+requests
+retrying
+tqdm
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+webdriver-manager
+selenium
+pyotp
+yfinance
+oauth2client
+google-api-python-client
+beautifulsoup4

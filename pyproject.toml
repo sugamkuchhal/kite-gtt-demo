@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Keep initial rollout lightweight: catch syntax errors and undefined names.
+# (Avoid enforcing style/import sorting across dozens of scripts in one go.)
+select = ["E9", "F821", "F822", "F823"]
+ignore = []
+
