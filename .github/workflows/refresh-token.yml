@@ -21,6 +21,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-refresh-token.txt
 
       - name: Setup Chrome
         uses: browser-actions/setup-chrome@v1
@@ -30,26 +32,42 @@ jobs:
       - name: Create venv and install deps
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
           python -m venv .venv
           source .venv/bin/activate
           python -m pip install --upgrade pip
-          pip install kiteconnect selenium pyotp webdriver-manager requests
+          python -m pip install -r requirements-refresh-token.txt
 
       - name: Write secrets
         env:
           API_KEY: ${{ secrets.API_KEY }}
         shell: bash
         run: |
-          set -e
+          set -euo pipefail
+          if [ -z "${API_KEY:-}" ]; then
+            echo "::error::Missing API_KEY secret (expected 5-line content)."
+            exit 1
+          fi
           printf '%s' "${API_KEY}" > api_key.txt
+          python - <<'PY'
+from pathlib import Path
+lines = Path("api_key.txt").read_text().splitlines()
+if len(lines) < 5 or any(not s.strip() for s in lines[:5]):
+    raise SystemExit("API_KEY secret must contain 5 non-empty lines: key, secret, user, password, totp.")
+print("api_key.txt validated with", len(lines), "lines")
+PY
 
       - name: Run headless login to get new token
         shell: bash
         env:
           CI: "true"
+          API_KEY_PATH: ${{ github.workspace }}/api_key.txt
+          ACCESS_TOKEN_PATH: ${{ github.workspace }}/access_token.txt
+          LOGIN_WAIT_SECS: "10"
+          TOTP_WAIT_SECS: "6"
+          REDIRECT_WAIT_SECS: "10"
         run: |
-          set -e
+          set -euo pipefail
           source .venv/bin/activate
           echo "::notice::Logging in via Chrome..."
           python3 auto_login.py
@@ -63,8 +81,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          set -e
+          set -euo pipefail
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::error::Missing GH_PAT secret."
+            exit 1
+          fi
           NEW_TOKEN=$(cat access_token.txt)
+          if [ -z "${NEW_TOKEN:-}" ]; then
+            echo "::error::Access token file is empty."
+            exit 1
+          fi
           echo "::notice::Updating ACCESS_TOKEN secret..."
           gh secret set ACCESS_TOKEN --body "$NEW_TOKEN"
           echo "::notice::Access token updated successfully."
