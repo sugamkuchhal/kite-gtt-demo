@@ -2,8 +2,10 @@ import gspread
 from datetime import datetime
 import argparse
 
+from runtime_paths import get_creds_path
+
 # --- CONFIGURATION ---
-CREDENTIALS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
+CREDENTIALS_PATH = str(get_creds_path())
 
 # --- HELPERS ---
 def log(msg):

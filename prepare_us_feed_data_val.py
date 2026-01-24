@@ -2,7 +2,9 @@ from datetime import datetime, date
 import gspread
 from google.oauth2.service_account import Credentials
 
-CREDS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
+from runtime_paths import get_creds_path
+
+CREDS_PATH = str(get_creds_path())
 
 def get_ws(sheet_name, tab_name):
     creds = Credentials.from_service_account_file(

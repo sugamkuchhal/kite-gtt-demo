@@ -11,14 +11,17 @@ import smtplib
 import getpass
 import json
 import os
-SMTP_TOKEN_FILE = "smtp_token.json"
+
+from runtime_paths import get_creds_path, get_smtp_token_path
+
+SMTP_TOKEN_FILE = str(get_smtp_token_path())
 
 # ==========================
 # Config (constants)
 # ==========================
 SHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
 TAB_NAME = "Action_Mailing_List"
-SERVICE_CREDS = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
+SERVICE_CREDS = str(get_creds_path())
 
 
 # Email / SMTP settings

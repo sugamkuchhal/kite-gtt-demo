@@ -4,11 +4,12 @@ import time
 import logging
 from datetime import datetime
 
+from runtime_paths import get_creds_path
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Google credentials
-CREDENTIALS_FILE = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
+CREDENTIALS_FILE = str(get_creds_path())
 SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1TX4Q8YG0-d2_L1YOhvb9OYDgklvHj3eFK76JN7Pdavg/edit?gid=187190800#gid=187190800"
 
 # Authorize

@@ -7,8 +7,10 @@ from kite_session import get_kite  # Assumes you have this utility in your proje
 import gspread
 from google.oauth2.service_account import Credentials
 
+from runtime_paths import get_creds_path
+
 # --- CONFIGURABLE ---
-CREDS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"  # Adjust if needed
+CREDS_PATH = str(get_creds_path())
 BATCH_SIZE = 10
 SLEEP_BETWEEN_BATCHES = 2  # seconds
 

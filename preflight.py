@@ -1,9 +1,11 @@
 from kiteconnect import KiteConnect
-import sys, pathlib
+import sys
+
+from runtime_paths import get_api_key_path, get_access_token_path
 
 def main():
-    api_file = pathlib.Path("api_key.txt")
-    token_file = pathlib.Path("access_token.txt")
+    api_file = get_api_key_path()
+    token_file = get_access_token_path()
 
     if not api_file.exists() or not token_file.exists():
         print("Missing key or token file.")
