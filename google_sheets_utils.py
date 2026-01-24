@@ -9,6 +9,8 @@ from oauth2client.service_account import ServiceAccountCredentials
 from gspread.exceptions import APIError
 from functools import lru_cache
 
+from runtime_paths import get_creds_path
+
 # ---- Simple token-bucket to keep us under RPM caps (reads/writes) ----
 _MAX_RPM = int(os.getenv("GSHEETS_MAX_RPM", "55"))  # conservative default
 _CALL_TIMES = collections.deque()  # timestamps of recent calls (any GET/UPDATE)
@@ -54,7 +56,7 @@ def get_gsheet_client():
         "https://spreadsheets.google.com/feeds",
         "https://www.googleapis.com/auth/drive",
     ]
-    creds = ServiceAccountCredentials.from_json_keyfile_name("creds.json", scope)
+    creds = ServiceAccountCredentials.from_json_keyfile_name(str(get_creds_path()), scope)
     return gspread.authorize(creds)
 
 # ---- Header cache (per worksheet id) ----

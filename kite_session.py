@@ -5,6 +5,7 @@ import logging
 from kiteconnect import KiteConnect
 import subprocess
 
+from runtime_paths import get_access_token_path, get_api_key_path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 API_KEY = None
@@ -15,7 +16,7 @@ def load_credentials():
     if API_KEY and API_SECRET:
         return API_KEY, API_SECRET
 
-    with open("api_key.txt") as f:
+    with open(get_api_key_path(), "r", encoding="utf-8") as f:
         lines = [line.strip() for line in f.readlines()]
         API_KEY = lines[0]
         API_SECRET = lines[1]
@@ -37,8 +38,9 @@ def get_kite():
     api_key, api_secret = load_credentials()
     kite = KiteConnect(api_key=api_key)
 
-    if os.path.exists("access_token.txt"):
-        with open("access_token.txt") as f:
+    access_token_path = get_access_token_path()
+    if os.path.exists(access_token_path):
+        with open(access_token_path, "r", encoding="utf-8") as f:
             access_token = f.read().strip()
         kite.set_access_token(access_token)
 
@@ -48,7 +50,7 @@ def get_kite():
 
     # fallback: get new token via auto_login
     run_auto_login()
-    with open("access_token.txt") as f:
+    with open(access_token_path, "r", encoding="utf-8") as f:
         access_token = f.read().strip()
     kite.set_access_token(access_token)
     logging.info("✅ New access token set.")

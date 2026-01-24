@@ -1,7 +1,9 @@
 import gspread
 from google.oauth2.service_account import Credentials
 
-CREDS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
+from runtime_paths import get_creds_path
+
+CREDS_PATH = str(get_creds_path())
 SHEET_NAME = "SARAS Portfolio - Stocks"
 SRC_TAB = "LATEST_ORDERS"
 DEST_TAB = "NEW_ORDERS"

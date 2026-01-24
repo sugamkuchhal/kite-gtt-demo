@@ -12,8 +12,10 @@ from typing import List, Tuple, Dict, Any
 import gspread
 from google.oauth2.service_account import Credentials
 
+from runtime_paths import get_creds_path
+
 # ---------------- CONFIG ----------------
-CREDS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
+CREDS_PATH = str(get_creds_path())
 
 # Source spreadsheet URL (ETL destination that contains BANK_INC and BANK_NEW)
 SOURCE_SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1TX4Q8YG0-d2_L1YOhvb9OYDgklvHj3eFK76JN7Pdavg"
