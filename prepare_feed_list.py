@@ -3,7 +3,9 @@ from google.oauth2.service_account import Credentials
 import argparse
 import time
 
-CREDS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
+from runtime_paths import get_creds_path
+
+CREDS_PATH = str(get_creds_path())
 
 # --- tiny retry helper (exponential backoff) for 429s on READ ops only ---
 def _retry_read(fn, *args, max_tries=5, **kwargs):

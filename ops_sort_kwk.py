@@ -3,7 +3,9 @@ import argparse
 import time
 from google.oauth2.service_account import Credentials
 
-CREDS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
+from runtime_paths import get_creds_path
+
+CREDS_PATH = str(get_creds_path())
 
 def load_sheet(sheet_name):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]

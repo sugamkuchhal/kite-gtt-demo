@@ -5,8 +5,10 @@ from datetime import datetime
 import re
 from gspread_formatting import format_cell_range, cellFormat, numberFormat
 
+from runtime_paths import get_creds_path
 
-CREDS_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
+
+CREDS_PATH = str(get_creds_path())
 SOURCE_SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE"
 STOCK_SHEET_NAME = "NSE_Stock_Data"
 ETF_SHEET_NAME = "NSE_ETF_Data"

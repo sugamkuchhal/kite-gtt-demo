@@ -4,8 +4,10 @@ from kiteconnect import KiteConnect
 from gspread_formatting import format_cell_range, CellFormat, NumberFormat
 import sys
 
-API_KEY_FILE = "api_key.txt"
-CREDS_JSON_PATH = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
+from runtime_paths import get_api_key_path, get_creds_path
+
+API_KEY_FILE = get_api_key_path()
+CREDS_JSON_PATH = str(get_creds_path())
 SHEET_URL = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE/edit"
 TICKERS_SHEET_NAME = "TICKERS_TICK_SIZE"
 ZERODHA_SHEET_NAME = "ZERODHA_TICKERS"
