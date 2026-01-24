@@ -32,6 +32,8 @@ import gspread
 from google.oauth2.service_account import Credentials
 from tqdm import tqdm
 
+from runtime_paths import get_creds_path
+
 # gspread-formatting
 try:
     from gspread_formatting import set_number_format, set_frozen
@@ -41,7 +43,7 @@ except Exception:
     NumberFormat = lambda *a, **k: None
 
 # ===== Editable defaults (set these once, or override via CLI) =====
-DEFAULT_CREDENTIALS_FILE = "/Users/sugamkuchhal/Documents/kite-gtt-demo/creds.json"
+DEFAULT_CREDENTIALS_FILE = str(get_creds_path())
 DEFAULT_SPREADSHEET = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE"
 # ==================================================================
 

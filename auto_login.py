@@ -15,10 +15,11 @@ import shutil
 from kiteconnect import KiteConnect
 from webdriver_manager.chrome import ChromeDriverManager
 
+from runtime_paths import get_access_token_path, get_api_key_path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 # Load secrets
-with open("api_key.txt") as f:
+with open(get_api_key_path(), "r", encoding="utf-8") as f:
     lines = [line.strip() for line in f.readlines()]
     API_KEY = lines[0]
     API_SECRET = lines[1]
@@ -187,7 +188,8 @@ def auto_login_and_get_kite():
         kite.set_access_token(session_data["access_token"])
         logging.info(f"✅ Access token: {session_data['access_token']}")
 
-        with open("access_token.txt", "w") as f:
+        access_token_path = get_access_token_path()
+        with open(access_token_path, "w", encoding="utf-8") as f:
             f.write(session_data["access_token"])
 
         return kite, session_data["access_token"]

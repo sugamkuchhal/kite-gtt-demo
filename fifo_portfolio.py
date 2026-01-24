@@ -3,10 +3,12 @@ from datetime import datetime
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
+from runtime_paths import get_creds_path
+
 # --- CONFIG ---
 SPREADSHEET_NAME = "SARAS Portfolio - Stocks"
 WORKSHEET_NAME = "ALL_ORDERS"
-CREDENTIALS_FILE = "creds.json"
+CREDENTIALS_FILE = str(get_creds_path())
 
 # --- STEP 1: DOWNLOAD DATA FROM GOOGLE SHEETS ---
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]

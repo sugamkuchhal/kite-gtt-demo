@@ -1,8 +1,10 @@
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
+from runtime_paths import get_creds_path
+
 # Path to your service account JSON file
-SERVICE_ACCOUNT_FILE = "creds.json"
+SERVICE_ACCOUNT_FILE = str(get_creds_path())
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 SPREADSHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
