@@ -1,4 +1,0 @@
-selenium
-webdriver-manager
-pyotp
-requests
