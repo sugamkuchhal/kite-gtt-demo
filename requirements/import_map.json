@@ -1,0 +1,11 @@
+{
+  "gspread_formatting": "gspread-formatting",
+  "googleapiclient": "google-api-python-client",
+  "google.oauth2": "google-auth",
+  "google.auth": "google-auth",
+  "google_auth_oauthlib": "google-auth-oauthlib",
+  "google_auth_httplib2": "google-auth-httplib2",
+  "oauth2client": "oauth2client",
+  "webdriver_manager": "webdriver-manager",
+  "bs4": "beautifulsoup4"
+}

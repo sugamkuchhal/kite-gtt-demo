@@ -174,9 +174,13 @@ jobs:
         run: |
           python3 -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
-          for req in ${{ steps.deps.outputs.req_files }}; do
-            .venv/bin/pip install -r "$req"
-          done
+          if [ "${{ steps.deps.outputs.use_full }}" = "true" ]; then
+            .venv/bin/pip install -r "${{ steps.deps.outputs.req_file }}"
+          else
+            if [ -n "${{ steps.deps.outputs.packages }}" ]; then
+              .venv/bin/pip install ${{ steps.deps.outputs.packages }}
+            fi
+          fi
 
       - name: Recreate non-auth secret files (repo root + Mac path mirror)
         if: ${{ steps.plan.outputs.should_run == 'true' && steps.plan.outputs.action != 'refresh' }}
