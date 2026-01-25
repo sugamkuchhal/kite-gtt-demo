@@ -34,10 +34,11 @@ def main():
     parser = argparse.ArgumentParser(description="Generate requirements/full.txt from resolver.")
     parser.add_argument("--write", action="store_true", help="Write full.txt (default).")
     parser.add_argument("--check", action="store_true", help="Check full.txt is up-to-date.")
+    parser.add_argument("--render", action="store_true", help="Print generated full.txt to stdout.")
     args = parser.parse_args()
 
-    if args.check and args.write:
-        print("Choose only one of --check or --write.")
+    if sum(bool(x) for x in (args.check, args.write, args.render)) > 1:
+        print("Choose only one of --check, --write, or --render.")
         return 2
 
     actions = ["refresh", "midday", "eod"]
@@ -50,6 +51,10 @@ def main():
         all_packages.update(packages)
 
     content = "\n".join(sorted(all_packages)) + "\n"
+
+    if args.render:
+        print(content, end="")
+        return 0
 
     if args.check:
         if not FULL_PATH.exists():
