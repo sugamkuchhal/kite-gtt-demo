@@ -1,7 +1,6 @@
 import os
 import sys
 import logging
-import subprocess
 import pyotp
 import tempfile
 from functools import lru_cache
@@ -47,10 +46,6 @@ LOGIN_WAIT_SECS = _env_float("LOGIN_WAIT_SECS", 8.0)
 TOTP_WAIT_SECS = _env_float("TOTP_WAIT_SECS", 3.0)
 SUBMIT_WAIT_SECS = _env_float("SUBMIT_WAIT_SECS", 3.0)
 REDIRECT_WAIT_SECS = _env_float("REDIRECT_WAIT_SECS", 8.0)
-
-
-def _is_ci():
-    return os.getenv("GITHUB_ACTIONS") == "true" or os.getenv("CI") == "true"
 
 
 @lru_cache(maxsize=1)
@@ -226,10 +221,6 @@ def exchange_token(request_token):
         with open(access_token_path, "w", encoding="utf-8") as f:
             f.write(session_data["access_token"])
 
-        if not _is_ci() and os.getenv("SKIP_GH_SECRET_UPDATE") not in ("1", "true", "TRUE"):
-            if not update_github_secret(session_data["access_token"]):
-                return None, None
-
         return kite, session_data["access_token"]
 
     except Exception as e:
@@ -268,32 +259,6 @@ def auto_login_and_get_kite():
                 pass
 
     return exchange_token(request_token)
-
-
-def update_github_secret(token):
-    secret_name = os.getenv("GH_SECRET_NAME", "ACCESS_TOKEN")
-    env = os.environ.copy()
-    if "GH_TOKEN" not in env and "GH_PAT" in env:
-        env["GH_TOKEN"] = env["GH_PAT"]
-    if not env.get("GH_TOKEN"):
-        logging.info("ℹ️ GH_TOKEN not set; using gh CLI auth if available.")
-    try:
-        subprocess.run(
-            ["gh", "secret", "set", secret_name, "--body", token],
-            check=True,
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        logging.info("✅ GitHub secret %s updated.", secret_name)
-        return True
-    except FileNotFoundError:
-        logging.error("❌ GitHub CLI (gh) not found. Install it to update secrets.")
-        return False
-    except subprocess.CalledProcessError as e:
-        logging.error("❌ Failed to update GitHub secret: %s", e.stderr.strip())
-        return False
 
 
 def main():
