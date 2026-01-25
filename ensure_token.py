@@ -85,7 +85,12 @@ def _update_github_secret(token):
 def main():
     parser = argparse.ArgumentParser(description="Ensure Kite access token is valid.")
     parser.add_argument("--force", action="store_true", help="Force auto_login even if token is valid.")
+    parser.add_argument("--check-only", action="store_true", help="Only check token validity; do not login.")
     args = parser.parse_args()
+
+    if args.force and args.check_only:
+        logging.error("Cannot use --force and --check-only together.")
+        return 2
 
     try:
         api_key = _read_api_key()
@@ -94,6 +99,13 @@ def main():
         return 2
 
     access_token = _read_access_token()
+    if args.check_only:
+        if _token_is_valid(api_key, access_token):
+            logging.info("Access token is valid.")
+            return 0
+        logging.info("Access token is invalid or missing.")
+        return 1
+
     if not args.force and _token_is_valid(api_key, access_token):
         logging.info("Access token is valid; no login needed.")
         return 0
