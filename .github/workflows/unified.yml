@@ -167,8 +167,9 @@ jobs:
             }
 
             # UPDATED windows (IST):
-            # - Refresh: 08:00–09:00 (exclusive), weekdays only
+            # - Refresh: 08:00–09:00 (exclusive), all days
             # - Midday:  09:00–15:45 (inclusive), weekdays only
+            # - EOD:     15:45–17:00 (exclusive), weekdays only
             NOW_HM=$(TZ=Asia/Kolkata date +%H:%M)
             NOW_DOW=$(TZ=Asia/Kolkata date +%u) # 1=Mon ... 7=Sun
             NOW_MIN=$(hm_to_min "$NOW_HM")
@@ -176,17 +177,23 @@ jobs:
             REFRESH_END=$(hm_to_min "09:00")
             MID_START=$(hm_to_min "09:00")
             MID_END=$(hm_to_min "15:45")
+            EOD_START=$(hm_to_min "15:45")
+            EOD_END=$(hm_to_min "17:00")
             IS_WEEKDAY=false
             if [ "$NOW_DOW" -ge 1 ] && [ "$NOW_DOW" -le 5 ]; then
               IS_WEEKDAY=true
             fi
             IN_REFRESH=false
             IN_MIDDAY=false
-            if [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -gt $REFRESH_START ] && [ $NOW_MIN -lt $REFRESH_END ]; then
+            IN_EOD=false
+            if [ $NOW_MIN -gt $REFRESH_START ] && [ $NOW_MIN -lt $REFRESH_END ]; then
               IN_REFRESH=true
             fi
             if [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -ge $MID_START ] && [ $NOW_MIN -le $MID_END ]; then
               IN_MIDDAY=true
+            fi
+            if [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -gt $EOD_START ] && [ $NOW_MIN -lt $EOD_END ]; then
+              IN_EOD=true
             fi
 
             # Decide which chain to run
@@ -208,8 +215,11 @@ jobs:
                 fi
                 if [ "$IN_MIDDAY" = true ]; then
                   RUN_MIDDAY=true
-                else
+                elif [ "$IN_EOD" = true ]; then
                   RUN_MIDDAY=false
+                else
+                  echo "::notice::auto window=none; exiting without action"
+                  exit 0
                 fi
                 ;;
             esac
