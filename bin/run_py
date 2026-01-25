@@ -13,13 +13,18 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 ROOT_SCRIPT="${REPO_ROOT}/${SCRIPT_NAME}.py"
 EXTRA_SCRIPT="${REPO_ROOT}/extra/${SCRIPT_NAME}.py"
+VENV_PY="${REPO_ROOT}/.venv/bin/python"
+PYTHON_BIN="python3"
+if [ -x "$VENV_PY" ]; then
+  PYTHON_BIN="$VENV_PY"
+fi
 
 if [ -f "$ROOT_SCRIPT" ]; then
-  exec python3 -u "$ROOT_SCRIPT" "$@"
+  exec "$PYTHON_BIN" -u "$ROOT_SCRIPT" "$@"
 fi
 
 if [ -f "$EXTRA_SCRIPT" ]; then
-  exec python3 -u "$EXTRA_SCRIPT" "$@"
+  exec "$PYTHON_BIN" -u "$EXTRA_SCRIPT" "$@"
 fi
 
 echo "Unknown script: ${SCRIPT_NAME}" >&2
