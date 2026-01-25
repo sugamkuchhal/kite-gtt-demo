@@ -19,21 +19,10 @@ on:
           - eod
           - script
         default: auto
-      command:
-        description: "Script mode: command to run (e.g. zerodha_tick_size). Leave empty for auto/midday/eod."
+      script:
+        description: "Script mode: script to run (e.g. zerodha_tick_size)."
         required: false
         default: ""
-      run_type:
-        description: "Deprecated: use mode instead (auto/midday/eod/refresh/script)."
-        required: false
-        type: choice
-        options:
-          - auto
-          - refresh
-          - midday
-          - eod
-          - script
-        default: auto
 
 # Overlap safety: queue new runs until the current one finishes
 concurrency:
@@ -52,20 +41,12 @@ jobs:
         id: plan
         env:
           MODE: ${{ github.event.inputs.mode }}
-          INPUT_COMMAND: ${{ github.event.inputs.command }}
-          RUN_TYPE: ${{ github.event.inputs.run_type }}
+          SCRIPT: ${{ github.event.inputs.script }}
         run: |
           set -euo pipefail
 
-          MODE_VAL="${MODE:-}"
-          RT_VAL="${RUN_TYPE:-}"
-          CMD_VAL="${INPUT_COMMAND:-}"
-          if [ -z "$MODE_VAL" ]; then
-            MODE_VAL="${RT_VAL:-auto}"
-          fi
-          if [ -z "$MODE_VAL" ]; then
-            MODE_VAL="auto"
-          fi
+          MODE_VAL="${MODE:-auto}"
+          CMD_VAL="${SCRIPT:-}"
 
           ACTION="none"
           case "$MODE_VAL" in
