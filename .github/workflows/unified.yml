@@ -2,22 +2,37 @@ name: Unified Script Runner
 
 on:
   schedule:
-    - cron: "0,30 4-9 * * 1-5"   # (UNCHANGED) 09:30–15:00 IST every 30 mins, Mon–Fri
-    - cron: "30 10 * * 1-5"      # (UNCHANGED) 16:00 IST (4:00 PM) Mon–Fri
+    - cron: "0,30 4-9 * * 1-5"   # 09:30–15:00 IST every 30 mins, Mon–Fri
+    - cron: "30 10 * * 1-5"      # 16:00 IST (4:00 PM) Mon–Fri
+    - cron: "15 3 * * *"         # 08:45 IST (all days)
+    - cron: "45 2 * * *"         # 08:15 IST (all days)
   workflow_dispatch:
     inputs:
-      command:
-        description: "Optional: full command to run (e.g. python3 fetch_holdings.py). Leave empty to run the automated chain."
-        required: false
-        default: ""
-      run_type:
-        description: "Optional: choose which chain to run when no command is provided."
+      mode:
+        description: "Run mode: auto | refresh | midday | eod | script"
         required: false
         type: choice
         options:
           - auto
+          - refresh
           - midday
           - eod
+          - script
+        default: auto
+      command:
+        description: "Script mode: command to run (e.g. zerodha_tick_size). Leave empty for auto/midday/eod."
+        required: false
+        default: ""
+      run_type:
+        description: "Deprecated: use mode instead (auto/midday/eod/refresh/script)."
+        required: false
+        type: choice
+        options:
+          - auto
+          - refresh
+          - midday
+          - eod
+          - script
         default: auto
 
 # Overlap safety: queue new runs until the current one finishes
@@ -96,24 +111,54 @@ jobs:
           [ -n "$SMTP_TOKEN_JSON" ] && printf '%s' "$SMTP_TOKEN_JSON" | sudo tee "$MACDIR/smtp_token.json" >/dev/null || true
           ls -l creds.json smtp_token.json api_key.txt access_token.txt || true
 
-      - name: Run (manual command if provided, else choose auto/midday/eod)
+      - name: Run unified modes (script/refresh/midday/eod/auto)
         env:
+          MODE: ${{ github.event.inputs.mode }}
           INPUT_COMMAND: ${{ github.event.inputs.command }}
           RUN_TYPE: ${{ github.event.inputs.run_type }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           sudo -E bash -lc '
             set -euo pipefail
             source .venv/bin/activate
+            export PATH="$PWD/bin:$PATH"
 
-            # If a manual command is provided, honor it exactly (existing behavior)
-            if [ -n "${INPUT_COMMAND:-}" ]; then
-              echo "::notice::Running manual command: ${INPUT_COMMAND}"
-              eval "$INPUT_COMMAND"
+            # Resolve mode (prefer MODE; fallback to RUN_TYPE for backward compatibility)
+            MODE_VAL="${MODE:-}"
+            RT_VAL="${RUN_TYPE:-}"
+            CMD_VAL="${INPUT_COMMAND:-}"
+            if [ -z "$MODE_VAL" ]; then
+              MODE_VAL="${RT_VAL:-auto}"
+            fi
+            if [ -z "$MODE_VAL" ]; then
+              MODE_VAL="auto"
+            fi
+
+            ensure_token_cmd() {
+              ensure_token "$@"
+            }
+
+            # Script mode: run a single command (script wrapper)
+            if [ "$MODE_VAL" = "script" ]; then
+              if [ -z "$CMD_VAL" ]; then
+                echo "::error::mode=script requires a command (e.g. zerodha_tick_size)."
+                exit 2
+              fi
+              echo "::notice::mode=script → ensuring token, then running: ${CMD_VAL}"
+              ensure_token_cmd
+              eval "$CMD_VAL"
+              exit 0
+            fi
+
+            # Refresh mode: force token refresh and exit
+            if [ "$MODE_VAL" = "refresh" ]; then
+              echo "::notice::mode=refresh → forcing token refresh"
+              ensure_token_cmd --force
               exit 0
             fi
 
             # Normalize RUN_TYPE (default "auto" if unset)
-            RT="${RUN_TYPE:-auto}"
+            RT="${MODE_VAL:-auto}"
 
             # Helper: convert HH:MM to minutes since midnight
             hm_to_min() {
@@ -121,14 +166,34 @@ jobs:
               echo $((10#$h*60 + 10#$m))
             }
 
-            # UPDATED mid-day window: 09:00–15:45 IST (inclusive)
+            # UPDATED windows (IST):
+            # - Refresh: 08:00–09:00 (exclusive), all days
+            # - Midday:  09:00–15:45 (inclusive), weekdays only
+            # - EOD:     15:45–17:00 (exclusive), weekdays only
             NOW_HM=$(TZ=Asia/Kolkata date +%H:%M)
+            NOW_DOW=$(TZ=Asia/Kolkata date +%u) # 1=Mon ... 7=Sun
             NOW_MIN=$(hm_to_min "$NOW_HM")
+            REFRESH_START=$(hm_to_min "08:00")
+            REFRESH_END=$(hm_to_min "09:00")
             MID_START=$(hm_to_min "09:00")
             MID_END=$(hm_to_min "15:45")
+            EOD_START=$(hm_to_min "15:45")
+            EOD_END=$(hm_to_min "17:00")
+            IS_WEEKDAY=false
+            if [ "$NOW_DOW" -ge 1 ] && [ "$NOW_DOW" -le 5 ]; then
+              IS_WEEKDAY=true
+            fi
+            IN_REFRESH=false
             IN_MIDDAY=false
-            if [ $NOW_MIN -ge $MID_START ] && [ $NOW_MIN -le $MID_END ]; then
+            IN_EOD=false
+            if [ $NOW_MIN -gt $REFRESH_START ] && [ $NOW_MIN -lt $REFRESH_END ]; then
+              IN_REFRESH=true
+            fi
+            if [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -ge $MID_START ] && [ $NOW_MIN -le $MID_END ]; then
               IN_MIDDAY=true
+            fi
+            if [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -gt $EOD_START ] && [ $NOW_MIN -lt $EOD_END ]; then
+              IN_EOD=true
             fi
 
             # Decide which chain to run
@@ -142,14 +207,25 @@ jobs:
                 RUN_MIDDAY=false
                 ;;
               auto|*)
-                echo "::notice::run_type=auto; current IST time is $NOW_HM"
+                echo "::notice::run_type=auto; current IST time is $NOW_HM (weekday=$IS_WEEKDAY)"
+                if [ "$IN_REFRESH" = true ]; then
+                  echo "::notice::auto window=refresh; forcing token refresh only"
+                  ensure_token_cmd --force
+                  exit 0
+                fi
                 if [ "$IN_MIDDAY" = true ]; then
                   RUN_MIDDAY=true
-                else
+                elif [ "$IN_EOD" = true ]; then
                   RUN_MIDDAY=false
+                else
+                  echo "::notice::auto window=none; exiting without action"
+                  exit 0
                 fi
                 ;;
             esac
+
+            # Ensure token before running chains
+            ensure_token_cmd
 
             if [ "$RUN_MIDDAY" = true ]; then
               echo "::group::RUN: Mid-day chain"

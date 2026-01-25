@@ -1,8 +1,9 @@
 import os
-import time
+import sys
 import logging
 import pyotp
 import tempfile
+from functools import lru_cache
 from urllib.parse import urlparse, parse_qs
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -30,8 +31,33 @@ with open(get_api_key_path(), "r", encoding="utf-8") as f:
 LOGIN_URL = f"https://kite.zerodha.com/connect/login?api_key={API_KEY}&v=3"
 
 
+def _env_float(name: str, default: float) -> float:
+    val = os.getenv(name)
+    if not val:
+        return default
+    try:
+        return float(val)
+    except ValueError:
+        logging.warning("⚠️ Invalid %s=%s; using default %s", name, val, default)
+        return default
+
+
+LOGIN_WAIT_SECS = _env_float("LOGIN_WAIT_SECS", 8.0)
+TOTP_WAIT_SECS = _env_float("TOTP_WAIT_SECS", 3.0)
+SUBMIT_WAIT_SECS = _env_float("SUBMIT_WAIT_SECS", 3.0)
+REDIRECT_WAIT_SECS = _env_float("REDIRECT_WAIT_SECS", 8.0)
+
+
+@lru_cache(maxsize=1)
 def _find_chrome_binary():
     """Detect Chrome binary path for macOS, Linux, or CI."""
+    env_path = os.environ.get("CHROME_BINARY")
+    if env_path:
+        if os.path.exists(env_path):
+            return env_path
+        logging.warning("⚠️ CHROME_BINARY is set but not found: %s", env_path)
+
+    attempted = []
     mac_candidates = [
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         "/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
@@ -40,6 +66,7 @@ def _find_chrome_binary():
         "/Applications/Chromium.app/Contents/MacOS/Chromium",
     ]
     for p in mac_candidates:
+        attempted.append(p)
         if os.path.exists(p):
             return p
 
@@ -50,22 +77,18 @@ def _find_chrome_binary():
         "/usr/bin/chromium-browser",
     ]
     for p in linux_candidates:
+        attempted.append(p)
         if os.path.exists(p):
             return p
 
-    env_path = os.environ.get("CHROME_BINARY")
-    if env_path and os.path.exists(env_path):
-        return env_path
-
     raise FileNotFoundError(
         "🚫 Could not find Chrome binary. "
-        "Install Chrome or set CHROME_BINARY env var to its path."
+        "Install Chrome or set CHROME_BINARY env var to its path. "
+        f"Attempted: {attempted}"
     )
 
 
-def auto_login_and_get_kite():
-    logging.info("🚀 Starting auto login process")
-
+def build_driver():
     options = Options()
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
@@ -96,23 +119,17 @@ def auto_login_and_get_kite():
         driver_path = shutil.which("chromedriver")
 
     if driver_path:
-        driver = webdriver.Chrome(service=Service(driver_path), options=options)
-    else:
-        driver = webdriver.Chrome(options=options)
+        return webdriver.Chrome(service=Service(driver_path), options=options)
+    return webdriver.Chrome(options=options)
 
-    wait = WebDriverWait(driver, 8)
-    totp_wait = WebDriverWait(driver, 3)
 
-    driver.get(LOGIN_URL)
-    logging.info(f"🌐 Opened login URL: {LOGIN_URL}")
-
+def login_page_1(driver, wait):
     # Wait for the password input to appear (common on both variants)
     try:
         password_element = wait.until(EC.presence_of_element_located((By.ID, "password")))
     except TimeoutException:
         logging.error("❌ Password input did not appear - login page might have changed.")
-        driver.quit()
-        return None, None
+        return False
 
     # Check if userid input is present (fresh login or session active)
     userid_elements = driver.find_elements(By.ID, "userid")
@@ -130,7 +147,7 @@ def auto_login_and_get_kite():
         logging.info("➡️ Clicked login button")
 
         try:
-            WebDriverWait(driver, 3).until(EC.staleness_of(userid_element))
+            WebDriverWait(driver, SUBMIT_WAIT_SECS).until(EC.staleness_of(userid_element))
             logging.info("⏳ Page 1 submitted, moving to TOTP page")
         except TimeoutException:
             logging.warning("⚠️ Page 1 userid element did not go stale after submit, proceeding cautiously")
@@ -143,34 +160,43 @@ def auto_login_and_get_kite():
         logging.info("➡️ Clicked login button (session active flow)")
 
         try:
-            wait.until(EC.staleness_of(password_element))
+            WebDriverWait(driver, SUBMIT_WAIT_SECS).until(EC.staleness_of(password_element))
             logging.info("⏳ Page 1 submitted, moving to TOTP page")
         except TimeoutException:
             logging.warning("⚠️ Password element did not go stale after submit, proceeding cautiously")
+    return True
 
+
+def login_totp(driver, totp_wait):
     # Now wait for TOTP input
     logging.info("⏳ Waiting for TOTP input field on page 2")
     try:
         totp_input = totp_wait.until(EC.presence_of_element_located((By.ID, "userid")))
     except TimeoutException:
         logging.error("❌ TOTP input field did not appear on page 2")
-        driver.quit()
-        return None, None
+        return False
 
     # Enter TOTP
     totp_code = pyotp.TOTP(TOTP_SECRET).now()
-    logging.info(f"📟 Generated TOTP: {totp_code}")
+    logging.info("📟 Generated TOTP")
     totp_input.clear()
     totp_input.send_keys(totp_code)
     logging.info("✅ Entered TOTP")
 
     driver.find_element(By.CSS_SELECTOR, 'button[type="submit"]').click()
     logging.info("➡️ Clicked continue after TOTP")
+    return True
 
+
+def extract_request_token(driver):
     # Wait for redirect URL after login success
-    time.sleep(3)
+    try:
+        WebDriverWait(driver, REDIRECT_WAIT_SECS).until(
+            lambda d: "request_token=" in d.current_url
+        )
+    except TimeoutException:
+        logging.error("❌ Redirect did not include request_token within timeout")
     current_url = driver.current_url
-    driver.quit()
     logging.info(f"🔄 Redirected to: {current_url}")
 
     parsed_url = urlparse(current_url)
@@ -178,10 +204,13 @@ def auto_login_and_get_kite():
 
     if not request_token:
         logging.error("❌ Could not extract request_token from URL")
-        return None, None
+        return None
 
     logging.info(f"✅ request_token: {request_token}")
+    return request_token
 
+
+def exchange_token(request_token):
     kite = KiteConnect(api_key=API_KEY)
     try:
         session_data = kite.generate_session(request_token, api_secret=API_SECRET)
@@ -199,12 +228,48 @@ def auto_login_and_get_kite():
         return None, None
 
 
+def auto_login_and_get_kite():
+    logging.info("🚀 Starting auto login process")
+    driver = None
+    request_token = None
+    try:
+        driver = build_driver()
+        wait = WebDriverWait(driver, LOGIN_WAIT_SECS)
+        totp_wait = WebDriverWait(driver, TOTP_WAIT_SECS)
+
+        driver.get(LOGIN_URL)
+        logging.info(f"🌐 Opened login URL: {LOGIN_URL}")
+
+        if not login_page_1(driver, wait):
+            return None, None
+        if not login_totp(driver, totp_wait):
+            return None, None
+
+        request_token = extract_request_token(driver)
+        if not request_token:
+            return None, None
+    except Exception as e:
+        logging.error(f"❌ Unexpected error during login flow: {e}")
+        return None, None
+    finally:
+        if driver:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+
+    return exchange_token(request_token)
+
+
 def main():
     kite, _ = auto_login_and_get_kite()
     if kite:
         profile = kite.profile()
         logging.info(f"👤 Logged in as: {profile['user_name']} (user_id={profile['user_id']})")
+        return 0
+    logging.error("❌ Auto-login failed.")
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
