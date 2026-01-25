@@ -2,8 +2,10 @@ name: Unified Script Runner
 
 on:
   schedule:
-    - cron: "0,30 4-9 * * 1-5"   # (UNCHANGED) 09:30–15:00 IST every 30 mins, Mon–Fri
-    - cron: "30 10 * * 1-5"      # (UNCHANGED) 16:00 IST (4:00 PM) Mon–Fri
+    - cron: "0,30 4-9 * * 1-5"   # 09:30–15:00 IST every 30 mins, Mon–Fri
+    - cron: "30 10 * * 1-5"      # 16:00 IST (4:00 PM) Mon–Fri
+    - cron: "15 3 * * *"         # 08:45 IST (all days)
+    - cron: "45 2 * * *"         # 08:15 IST (all days)
   workflow_dispatch:
     inputs:
       mode:
@@ -164,13 +166,26 @@ jobs:
               echo $((10#$h*60 + 10#$m))
             }
 
-            # UPDATED mid-day window: 09:00–15:45 IST (inclusive)
+            # UPDATED windows (IST):
+            # - Refresh: 08:00–09:00 (exclusive), weekdays only
+            # - Midday:  09:00–15:45 (inclusive), weekdays only
             NOW_HM=$(TZ=Asia/Kolkata date +%H:%M)
+            NOW_DOW=$(TZ=Asia/Kolkata date +%u) # 1=Mon ... 7=Sun
             NOW_MIN=$(hm_to_min "$NOW_HM")
+            REFRESH_START=$(hm_to_min "08:00")
+            REFRESH_END=$(hm_to_min "09:00")
             MID_START=$(hm_to_min "09:00")
             MID_END=$(hm_to_min "15:45")
+            IS_WEEKDAY=false
+            if [ "$NOW_DOW" -ge 1 ] && [ "$NOW_DOW" -le 5 ]; then
+              IS_WEEKDAY=true
+            fi
+            IN_REFRESH=false
             IN_MIDDAY=false
-            if [ $NOW_MIN -ge $MID_START ] && [ $NOW_MIN -le $MID_END ]; then
+            if [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -gt $REFRESH_START ] && [ $NOW_MIN -lt $REFRESH_END ]; then
+              IN_REFRESH=true
+            fi
+            if [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -ge $MID_START ] && [ $NOW_MIN -le $MID_END ]; then
               IN_MIDDAY=true
             fi
 
@@ -185,7 +200,12 @@ jobs:
                 RUN_MIDDAY=false
                 ;;
               auto|*)
-                echo "::notice::run_type=auto; current IST time is $NOW_HM"
+                echo "::notice::run_type=auto; current IST time is $NOW_HM (weekday=$IS_WEEKDAY)"
+                if [ "$IN_REFRESH" = true ]; then
+                  echo "::notice::auto window=refresh; forcing token refresh only"
+                  ensure_token_cmd --force
+                  exit 0
+                fi
                 if [ "$IN_MIDDAY" = true ]; then
                   RUN_MIDDAY=true
                 else
