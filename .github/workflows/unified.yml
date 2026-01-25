@@ -146,6 +146,20 @@ jobs:
             echo "need_login=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve dependency groups
+        id: deps
+        if: ${{ steps.plan.outputs.should_run == 'true' }}
+        env:
+          ACTION: ${{ steps.plan.outputs.action }}
+          COMMAND: ${{ steps.plan.outputs.command }}
+          NEED_LOGIN: ${{ steps.token_check.outputs.need_login }}
+        run: |
+          set -euo pipefail
+          python3 resolve_deps.py \
+            --action "$ACTION" \
+            --command "$COMMAND" \
+            --need-login "$NEED_LOGIN" >> "$GITHUB_OUTPUT"
+
       - name: Install Google Chrome
         if: ${{ steps.plan.outputs.should_run == 'true' && steps.token_check.outputs.need_login == 'true' }}
         run: |
@@ -155,24 +169,18 @@ jobs:
           sudo dpkg -i google-chrome-stable_current_amd64.deb || sudo apt-get -fy install
           google-chrome --version
 
-      - name: Create virtualenv and install login deps (refresh)
-        if: ${{ steps.plan.outputs.should_run == 'true' && steps.plan.outputs.action == 'refresh' }}
+      - name: Create virtualenv and install deps
+        if: ${{ steps.plan.outputs.should_run == 'true' }}
         run: |
           python3 -m venv .venv
           .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/pip install \
-            kiteconnect selenium pyotp webdriver-manager requests
-
-      - name: Create virtualenv and install full deps
-        if: ${{ steps.plan.outputs.should_run == 'true' && steps.plan.outputs.action != 'refresh' }}
-        run: |
-          python3 -m venv .venv
-          .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/pip install \
-            gspread gspread-formatting kiteconnect pandas requests \
-            retrying tqdm google-auth google-auth-oauthlib google-auth-httplib2 \
-            webdriver-manager selenium pyotp yfinance oauth2client \
-            google-api-python-client 
+          if [ "${{ steps.deps.outputs.use_full }}" = "true" ]; then
+            .venv/bin/pip install -r "${{ steps.deps.outputs.req_file }}"
+          else
+            if [ -n "${{ steps.deps.outputs.packages }}" ]; then
+              .venv/bin/pip install ${{ steps.deps.outputs.packages }}
+            fi
+          fi
 
       - name: Recreate non-auth secret files (repo root + Mac path mirror)
         if: ${{ steps.plan.outputs.should_run == 'true' && steps.plan.outputs.action != 'refresh' }}
