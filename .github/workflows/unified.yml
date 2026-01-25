@@ -138,9 +138,8 @@ jobs:
             echo "need_login=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          python3 -m venv .venv_check
-          .venv_check/bin/python -m pip install --quiet kiteconnect
-          if .venv_check/bin/python ensure_token.py --check-only; then
+          python3 -m pip install --quiet --target .deps_check kiteconnect
+          if PYTHONPATH=".deps_check${PYTHONPATH:+:$PYTHONPATH}" python3 ensure_token.py --check-only; then
             echo "token_valid=true" >> "$GITHUB_OUTPUT"
             echo "need_login=false" >> "$GITHUB_OUTPUT"
           else
@@ -174,6 +173,10 @@ jobs:
       - name: Create virtualenv and install deps
         if: ${{ steps.plan.outputs.should_run == 'true' }}
         run: |
+          if [ "${{ steps.deps.outputs.packages_empty }}" = "true" ]; then
+            echo "::notice::No external packages required; skipping venv creation."
+            exit 0
+          fi
           python3 -m venv .venv
           if [ "${{ steps.deps.outputs.use_full }}" = "true" ]; then
             .venv/bin/pip install -r "${{ steps.deps.outputs.req_file }}"
@@ -207,7 +210,11 @@ jobs:
         run: |
           sudo -E bash -lc '
             set -euo pipefail
-            source .venv/bin/activate
+            if [ -f .venv/bin/activate ]; then
+              source .venv/bin/activate
+            else
+              echo "::notice::No venv present; using system python."
+            fi
             export PATH="$PWD/bin:$PATH"
 
             ensure_token_cmd() {
