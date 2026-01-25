@@ -1,0 +1,31 @@
+{
+  "refresh": ["auto_login"],
+  "midday": [
+    "set_field_false",
+    "fetch_all_gtts",
+    "fetch_all_orders",
+    "gtt_processor"
+  ],
+  "eod": [
+    "zerodha_tick_size",
+    "nse_combined_fetcher",
+    "nse_data_etl",
+    "prepare_feed_date_ext",
+    "prepare_feed_data_val",
+    "prepare_feed_list",
+    "set_field_false",
+    "fetch_all_gtts",
+    "fetch_all_orders",
+    "append_new_orders",
+    "fifo_portfolio",
+    "fetch_holdings",
+    "date_ext",
+    "data_val",
+    "ops_sort",
+    "ops_sort_kwk",
+    "ops_sort_sip_reg",
+    "is_trigger_true",
+    "gtt_processor",
+    "algo_tickers_mailer"
+  ]
+}

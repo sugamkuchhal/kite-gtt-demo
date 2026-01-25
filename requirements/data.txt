@@ -1,0 +1,7 @@
+pandas
+numpy
+tqdm
+retrying
+yfinance
+requests
+beautifulsoup4
