@@ -113,6 +113,8 @@ jobs:
         if: ${{ steps.plan.outputs.should_run == 'true' }}
         with:
           python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements/full.txt
 
       - name: Write auth files (api_key/access_token)
         if: ${{ steps.plan.outputs.should_run == 'true' }}
@@ -173,7 +175,6 @@ jobs:
         if: ${{ steps.plan.outputs.should_run == 'true' }}
         run: |
           python3 -m venv .venv
-          .venv/bin/python -m pip install --upgrade pip
           if [ "${{ steps.deps.outputs.use_full }}" = "true" ]; then
             .venv/bin/pip install -r "${{ steps.deps.outputs.req_file }}"
           else
