@@ -6,18 +6,31 @@ on:
     - cron: "30 10 * * 1-5"      # (UNCHANGED) 16:00 IST (4:00 PM) Mon–Fri
   workflow_dispatch:
     inputs:
-      command:
-        description: "Optional: full command to run (e.g. python3 fetch_holdings.py). Leave empty to run the automated chain."
-        required: false
-        default: ""
-      run_type:
-        description: "Optional: choose which chain to run when no command is provided."
+      mode:
+        description: "Run mode: auto | refresh | midday | eod | script"
         required: false
         type: choice
         options:
           - auto
+          - refresh
           - midday
           - eod
+          - script
+        default: auto
+      command:
+        description: "Script mode: command to run (e.g. zerodha_tick_size). Leave empty for auto/midday/eod."
+        required: false
+        default: ""
+      run_type:
+        description: "Deprecated: use mode instead (auto/midday/eod/refresh/script)."
+        required: false
+        type: choice
+        options:
+          - auto
+          - refresh
+          - midday
+          - eod
+          - script
         default: auto
 
 # Overlap safety: queue new runs until the current one finishes
@@ -96,24 +109,54 @@ jobs:
           [ -n "$SMTP_TOKEN_JSON" ] && printf '%s' "$SMTP_TOKEN_JSON" | sudo tee "$MACDIR/smtp_token.json" >/dev/null || true
           ls -l creds.json smtp_token.json api_key.txt access_token.txt || true
 
-      - name: Run (manual command if provided, else choose auto/midday/eod)
+      - name: Run unified modes (script/refresh/midday/eod/auto)
         env:
+          MODE: ${{ github.event.inputs.mode }}
           INPUT_COMMAND: ${{ github.event.inputs.command }}
           RUN_TYPE: ${{ github.event.inputs.run_type }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
           sudo -E bash -lc '
             set -euo pipefail
             source .venv/bin/activate
+            export PATH="$PWD/bin:$PATH"
 
-            # If a manual command is provided, honor it exactly (existing behavior)
-            if [ -n "${INPUT_COMMAND:-}" ]; then
-              echo "::notice::Running manual command: ${INPUT_COMMAND}"
-              eval "$INPUT_COMMAND"
+            # Resolve mode (prefer MODE; fallback to RUN_TYPE for backward compatibility)
+            MODE_VAL="${MODE:-}"
+            RT_VAL="${RUN_TYPE:-}"
+            CMD_VAL="${INPUT_COMMAND:-}"
+            if [ -z "$MODE_VAL" ]; then
+              MODE_VAL="${RT_VAL:-auto}"
+            fi
+            if [ -z "$MODE_VAL" ]; then
+              MODE_VAL="auto"
+            fi
+
+            ensure_token_cmd() {
+              ensure_token "$@"
+            }
+
+            # Script mode: run a single command (script wrapper)
+            if [ "$MODE_VAL" = "script" ]; then
+              if [ -z "$CMD_VAL" ]; then
+                echo "::error::mode=script requires a command (e.g. zerodha_tick_size)."
+                exit 2
+              fi
+              echo "::notice::mode=script → ensuring token, then running: ${CMD_VAL}"
+              ensure_token_cmd
+              eval "$CMD_VAL"
+              exit 0
+            fi
+
+            # Refresh mode: force token refresh and exit
+            if [ "$MODE_VAL" = "refresh" ]; then
+              echo "::notice::mode=refresh → forcing token refresh"
+              ensure_token_cmd --force
               exit 0
             fi
 
             # Normalize RUN_TYPE (default "auto" if unset)
-            RT="${RUN_TYPE:-auto}"
+            RT="${MODE_VAL:-auto}"
 
             # Helper: convert HH:MM to minutes since midnight
             hm_to_min() {
@@ -150,6 +193,9 @@ jobs:
                 fi
                 ;;
             esac
+
+            # Ensure token before running chains
+            ensure_token_cmd
 
             if [ "$RUN_MIDDAY" = true ]; then
               echo "::group::RUN: Mid-day chain"

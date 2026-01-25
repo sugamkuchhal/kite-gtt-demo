@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_NAME="${1:-}"
+if [ -z "$SCRIPT_NAME" ]; then
+  echo "Usage: run_py <script> [args...]" >&2
+  exit 2
+fi
+shift || true
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+ROOT_SCRIPT="${REPO_ROOT}/${SCRIPT_NAME}.py"
+EXTRA_SCRIPT="${REPO_ROOT}/extra/${SCRIPT_NAME}.py"
+
+if [ -f "$ROOT_SCRIPT" ]; then
+  exec python3 -u "$ROOT_SCRIPT" "$@"
+fi
+
+if [ -f "$EXTRA_SCRIPT" ]; then
+  exec python3 -u "$EXTRA_SCRIPT" "$@"
+fi
+
+echo "Unknown script: ${SCRIPT_NAME}" >&2
+exit 2
