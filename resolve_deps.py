@@ -290,12 +290,14 @@ def main():
         use_full = True
 
     if use_full:
-        print(f"packages=")
+        print("packages=")
         print("use_full=true")
         print(f"req_file={FULL_REQ}")
     else:
         print(f"packages={' '.join(sorted(packages))}")
         print("use_full=false")
+        if not packages:
+            print("packages_empty=true")
 
     if unknown_imports:
         print(f"unknown_imports={','.join(sorted(unknown_imports))}")
