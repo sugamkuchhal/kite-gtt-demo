@@ -116,6 +116,12 @@ jobs:
           cache: "pip"
           cache-dependency-path: requirements/full.txt
 
+      - name: Verify requirements/full.txt is up to date
+        if: ${{ steps.plan.outputs.should_run == 'true' }}
+        run: |
+          set -euo pipefail
+          python3 generate_full_requirements.py --check
+
       - name: Write auth files (api_key/access_token)
         if: ${{ steps.plan.outputs.should_run == 'true' }}
         env:
