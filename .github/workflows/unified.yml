@@ -29,6 +29,9 @@ concurrency:
   group: unified-script-runner
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   run:
     runs-on: ubuntu-latest
@@ -116,11 +119,36 @@ jobs:
           cache: "pip"
           cache-dependency-path: requirements/full.txt
 
-      - name: Verify requirements/full.txt is up to date
+      - name: Sync requirements/full.txt (auto)
         if: ${{ steps.plan.outputs.should_run == 'true' }}
         run: |
           set -euo pipefail
-          python3 generate_full_requirements.py --check
+          python3 generate_full_requirements.py --render > /tmp/full.new
+          if [ ! -f requirements/full.txt ]; then
+            mv /tmp/full.new requirements/full.txt
+            echo "::notice::requirements/full.txt created."
+            exit 0
+          fi
+          if ! diff -u requirements/full.txt /tmp/full.new; then
+            mv /tmp/full.new requirements/full.txt
+            echo "::notice::requirements/full.txt updated."
+          else
+            echo "::notice::requirements/full.txt is up to date."
+          fi
+
+      - name: Commit requirements/full.txt if changed
+        if: ${{ steps.plan.outputs.should_run == 'true' }}
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- requirements/full.txt; then
+            echo "::notice::No requirements/full.txt changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add requirements/full.txt
+          git commit -m "chore: update requirements/full.txt [skip ci]"
+          git push
 
       - name: Write auth files (api_key/access_token)
         if: ${{ steps.plan.outputs.should_run == 'true' }}
