@@ -1,4 +1,5 @@
-beautifulsoup4
+google-api-python-client
+google-auth
 gspread
 gspread-formatting
 kiteconnect
@@ -7,7 +8,6 @@ oauth2client
 pandas
 pyotp
 requests
-retrying
 selenium
 tqdm
 webdriver-manager
