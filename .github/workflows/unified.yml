@@ -275,6 +275,7 @@ jobs:
 
             if [ "$ACTION" = "midday" ]; then
               echo "::group::RUN: Mid-day chain"
+              python3 zerodha_tick_size.py
               python3 set_field_false.py
               python3 fetch_all_gtts.py
               python3 fetch_all_orders.py
