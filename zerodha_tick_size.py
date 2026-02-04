@@ -1,10 +1,18 @@
 # zerodha_tick_size_no_notfound.py
+import importlib.util
 import gspread
 from kiteconnect import KiteConnect
-from gspread_formatting import format_cell_range, CellFormat, NumberFormat
 import sys
 
 from runtime_paths import get_api_key_path, get_creds_path
+
+GSPREAD_FORMATTING_AVAILABLE = importlib.util.find_spec("gspread_formatting") is not None
+if GSPREAD_FORMATTING_AVAILABLE:
+    from gspread_formatting import format_cell_range, CellFormat, NumberFormat
+else:
+    format_cell_range = None
+    CellFormat = None
+    NumberFormat = None
 
 API_KEY_FILE = get_api_key_path()
 CREDS_JSON_PATH = str(get_creds_path())
@@ -146,10 +154,13 @@ tick_sheet.update(range_name=range_d, values=updates_col_d)
 tick_sheet.update(range_name=range_e, values=updates_col_e)
 
 # ----------------------- apply number formatting (2 decimals) to C and E -----------------------
-fmt_2dec = CellFormat(numberFormat=NumberFormat(type="NUMBER", pattern=NUMBER_PATTERN))
-print("Applying number format 2 decimals to columns C and E...")
-format_cell_range(tick_sheet, range_c, fmt_2dec)
-format_cell_range(tick_sheet, range_e, fmt_2dec)
+if GSPREAD_FORMATTING_AVAILABLE:
+    fmt_2dec = CellFormat(numberFormat=NumberFormat(type="NUMBER", pattern=NUMBER_PATTERN))
+    print("Applying number format 2 decimals to columns C and E...")
+    format_cell_range(tick_sheet, range_c, fmt_2dec)
+    format_cell_range(tick_sheet, range_e, fmt_2dec)
+else:
+    print("Skipping number formatting because gspread-formatting is not installed.")
 
 # ----------------------- summary -----------------------
 print("\n====== Tick Size Update Summary ======")
