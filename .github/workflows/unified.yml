@@ -303,7 +303,7 @@ jobs:
               python3 data_val.py
               bash combined_run.sh
               python3 ops_sort.py --sheet-name="SARAS Portfolio - Stocks" --green-tab="Mailing_List" --red-tab="Old_Mailing_List" --yellow-tab="Action_Mailing_List" --loose-update
-              python3 algo_tickers_mailer.py --emails "sugamkuchhal@gmail.com,sharma.virat@gmail.com"
+              python3 algo_tickers_mailer.py --emails "sugamkuchhal@gmail.com"
               echo "::endgroup::"
             else
               echo "::notice::action=$ACTION has no chain; exiting."
