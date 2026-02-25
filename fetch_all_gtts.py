@@ -1,11 +1,12 @@
 import logging
 import subprocess
 from kite_session import get_kite
-from google_sheets_utils import get_gsheet_client
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_worksheet
 
 # Google Sheet details
-PORTFOLIO_SHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
-ZERODHA_GTT_DATA = "ZERODHA_GTT_DATA"
+ALGO_NAME = "PORTFOLIO_STOCKS"
+ZERODHA_GTT_DATA_TAB_NAME = "ZERODHA_GTT_DATA"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
@@ -40,7 +41,7 @@ def fetch_all_gtts():
             # logging.info(f"GTT Row: {row}")
         
         client = get_gsheet_client()
-        sheet = client.open_by_key(PORTFOLIO_SHEET_ID).worksheet(ZERODHA_GTT_DATA)
+        sheet = open_worksheet(client, ZERODHA_GTT_DATA_TAB_NAME, spreadsheet_id=get_sheet_id(ALGO_NAME))
         
         # Prepare headers and rows
         headers = list(formatted[0].keys())
@@ -50,7 +51,7 @@ def fetch_all_gtts():
         sheet.clear()
         sheet.update(values=values, range_name="A1")
         
-        logging.info(f"✅ {len(formatted)} GTTs written to sheet: {ZERODHA_GTT_DATA}")
+        logging.info(f"✅ {len(formatted)} GTTs written to sheet: {ZERODHA_GTT_DATA_TAB_NAME}")
         
     except Exception as e:
         logging.error(f"❌ Failed to fetch/write GTTs: {e}")
