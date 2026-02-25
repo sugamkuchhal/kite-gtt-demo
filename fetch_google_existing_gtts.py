@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import logging
 import argparse
+from algo_sheets_lookup import get_sheet_id
 from google_sheets_utils import get_gsheet_client, open_worksheet, read_rows_from_sheet
 
 # --- Batch size: single source of truth from config.py ---
@@ -44,19 +45,20 @@ def fetch_existing_gtts_batch(sheet, start_row):
     return raw_records, filtered_records
 
 
-def get_tracking_sheet(sheet_id=None, sheet_name=None):
+def get_tracking_sheet(sheet_id=None, tab_name=None):
     if sheet_id is None:
-        sheet_id = getattr(config, "DATA_MANAGEMENT_SHEET_ID", None)
-    if sheet_name is None:
-        sheet_name = getattr(config, "DATA_MANAGEMENT_SHEET_NAME", None)
+        algo_name = getattr(config, "DATA_MANAGEMENT_ALGO_NAME", None)
+        sheet_id = get_sheet_id(algo_name) if algo_name else None
+    if tab_name is None:
+        tab_name = getattr(config, "DATA_MANAGEMENT_TAB_NAME", None)
 
-    if not sheet_id or not sheet_name:
-        raise ValueError("sheet_id and sheet_name must be provided either as args or via config")
+    if not sheet_id or not tab_name:
+        raise ValueError("sheet_id and tab_name must be provided either as args or via config")
 
     client = get_gsheet_client()
-    sheet = open_worksheet(client, sheet_name, spreadsheet_id=sheet_id)
+    sheet = open_worksheet(client, tab_name, spreadsheet_id=sheet_id)
 
-    logging.info(f"Accessed GTT sheet: {sheet_name}")
+    logging.info(f"Accessed GTT sheet: {tab_name}")
     return sheet
 
 
@@ -75,15 +77,15 @@ if __name__ == "__main__":
     start_row = 2
 
     try:
-        sheet_id = config.DATA_MANAGEMENT_SHEET_ID
-        sheet_name = config.DATA_MANAGEMENT_SHEET_NAME
+        sheet_id = get_sheet_id(config.DATA_MANAGEMENT_ALGO_NAME)
+        tab_name = config.DATA_MANAGEMENT_TAB_NAME
     except Exception:
-        logging.error("DATA_MANAGEMENT_SHEET_ID and DATA_MANAGEMENT_SHEET_NAME must be defined in config.py")
+        logging.error("DATA_MANAGEMENT_ALGO_NAME and DATA_MANAGEMENT_TAB_NAME must be defined in config.py")
         raise SystemExit(1)
 
-    logging.info(f"Using sheet_id={sheet_id}, sheet_name={sheet_name}, start_row={start_row}, batch_size={BATCH_SIZE}")
+    logging.info(f"Using sheet_id={sheet_id}, tab_name={tab_name}, start_row={start_row}, batch_size={BATCH_SIZE}")
 
-    sheet = get_tracking_sheet(sheet_id, sheet_name)
+    sheet = get_tracking_sheet(sheet_id, tab_name)
     raw_rows, filtered_rows = fetch_existing_gtts_batch(sheet, start_row)
 
     logging.info(f"Total raw rows returned: {len(raw_rows)}; filtered (non-empty) rows: {len(filtered_rows)}")
