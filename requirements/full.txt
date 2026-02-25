@@ -1,10 +1,8 @@
-google-api-python-client
 google-auth
 gspread
 gspread-formatting
 kiteconnect
 numpy
-oauth2client
 pandas
 pyotp
 requests
