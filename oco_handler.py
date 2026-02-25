@@ -4,13 +4,10 @@ import argparse
 import time
 import logging
 from kite_session import get_kite  # Assumes you have this utility in your project
-import gspread
-from google.oauth2.service_account import Credentials
-
-from runtime_paths import get_creds_path
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client as get_standard_gsheet_client, open_spreadsheet
 
 # --- CONFIGURABLE ---
-CREDS_PATH = str(get_creds_path())
 BATCH_SIZE = 10
 SLEEP_BETWEEN_BATCHES = 2  # seconds
 
@@ -19,12 +16,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 logger = logging.getLogger("oco_handler")
 
 def get_gsheet_client():
-    scopes = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scopes)
-    return gspread.authorize(creds)
+    return get_standard_gsheet_client()
 
 def fetch_gtt_ids(ws):
     """
@@ -55,13 +47,13 @@ def safe_api_call(func, *args, max_retries=3, base_delay=1, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description="Delete GTT IDs from Kite, based on sheet tab OCO_GTT_DATA.")
-    parser.add_argument('--sheet-name', required=True, help='Google Sheet filename')
+    parser.add_argument('--algo-name', required=True, help='Google Sheet filename')
     parser.add_argument('--tab-name', required=True, help='Tab name (worksheet) to process')
     args = parser.parse_args()
 
-    logger.info(f"Opening Google Sheet: {args.sheet_name} [{args.tab_name}]")
+    logger.info(f"Opening Google Sheet: {args.algo_name} [{args.tab_name}]")
     gc = get_gsheet_client()
-    sh = gc.open(args.sheet_name)
+    sh = open_spreadsheet(gc, spreadsheet_id=get_sheet_id(args.algo_name))
     ws = sh.worksheet(args.tab_name)
 
     kite = get_kite()

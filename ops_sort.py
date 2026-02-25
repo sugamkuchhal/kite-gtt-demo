@@ -1,11 +1,8 @@
-import gspread
 from datetime import datetime
 import argparse
 
-from runtime_paths import get_creds_path
-
-# --- CONFIGURATION ---
-CREDENTIALS_PATH = str(get_creds_path())
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_spreadsheet
 
 # --- HELPERS ---
 def log(msg):
@@ -14,7 +11,7 @@ def log(msg):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--sheet-name', required=True)
+    parser.add_argument('--algo-name', required=True)
     parser.add_argument('--green-tab', required=True)
     parser.add_argument('--red-tab', required=True)
     parser.add_argument('--yellow-tab', required=True)
@@ -32,8 +29,8 @@ def get_rows_with_action(data_rows, keyword):
 def main():
     args = parse_args()
     log("")
-    gc = gspread.service_account(filename=CREDENTIALS_PATH)
-    wb = gc.open(args.sheet_name)
+    client = get_gsheet_client()
+    wb = open_spreadsheet(client, spreadsheet_id=get_sheet_id(args.algo_name))
 
     green_ws = wb.worksheet(args.green_tab)
     red_ws = wb.worksheet(args.red_tab)

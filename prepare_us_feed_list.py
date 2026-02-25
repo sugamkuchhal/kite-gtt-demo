@@ -1,24 +1,20 @@
-import gspread
-from google.oauth2.service_account import Credentials
 import argparse
 
-from runtime_paths import get_creds_path
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_spreadsheet
 
-CREDS_PATH = str(get_creds_path())
 
-def load_sheet(sheet_name):
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scope)
-    client = gspread.authorize(creds)
-    return client.open(sheet_name)
+def load_sheet(algo_name):
+    client = get_gsheet_client()
+    return open_spreadsheet(client, spreadsheet_id=get_sheet_id(algo_name))
 
-def prepare_feed_list(sheet_name, source_tab, dest_tab):
+def prepare_feed_list(algo_name, source_tab, dest_tab):
     print(f"")
-    print(f"⚙️  Preparing feed list from '{sheet_name}'")
+    print(f"⚙️  Preparing feed list from ALGO '{algo_name}'")
     print(f"")
     print(f"⚙️  Preparing feed list from '{source_tab}' ➡️ '{dest_tab}'")
 
-    sheet = load_sheet(sheet_name)
+    sheet = load_sheet(algo_name)
     source_ws = sheet.worksheet(source_tab)
     dest_ws = sheet.worksheet(dest_tab)
 
@@ -92,13 +88,13 @@ def prepare_feed_list(sheet_name, source_tab, dest_tab):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Prepare Feed List from Google Sheet tabs.")
-    parser.add_argument("--sheet-name", required=True, help="Google Sheet file name")
+    parser.add_argument("--algo-name", required=True, help="Google Sheet file name")
     parser.add_argument("--source-sheet", required=True, help="Source tab name")
     parser.add_argument("--dest-sheet", required=True, help="Destination tab name")
     args = parser.parse_args()
 
     prepare_feed_list(
-        sheet_name=args.sheet_name,
+        algo_name=args.algo_name,
         source_tab=args.source_sheet,
         dest_tab=args.dest_sheet
     )
@@ -138,10 +134,10 @@ if __name__ == "__main__":
     
     # Resolve spreadsheet explicitly from the CLI sheet name (Option A)
     try:
-        spreadsheet = load_sheet(args.sheet_name)
+        spreadsheet = load_sheet(args.algo_name)
     except Exception as e:
         spreadsheet = None
-        print(f"❌ Could not open spreadsheet '{args.sheet_name}' for post-checks: {e}")
+        print(f"❌ Could not open spreadsheet ALGO '{args.algo_name}' for post-checks: {e}")
     
     if spreadsheet is None:
         print("❌ Could not resolve Spreadsheet object for post-checks. Skipping post-checks.")

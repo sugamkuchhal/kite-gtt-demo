@@ -28,7 +28,6 @@ import datetime
 import hashlib
 import random
 import socket
-import datetime
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
@@ -797,8 +796,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Process GTT instructions. Only accepts --sheet-id and --sheet-name which override config values."
     )
-    parser.add_argument("--sheet-id", dest="sheet_id", help="Instruction sheet ID (overrides config.INSTRUCTION_SHEET_ID)", type=str)
-    parser.add_argument("--sheet-name", dest="sheet_name", help="Instruction worksheet name (overrides config.INSTRUCTION_SHEET_NAME)", type=str)
+    parser.add_argument("--sheet-id", dest="sheet_id", help="Instruction sheet ID (overrides lookup/config default)", type=str)
+    parser.add_argument("--sheet-name", dest="sheet_name", help="Instruction TAB_NAME (overrides config.INSTRUCTION_TAB_NAME)", type=str)
     parser.add_argument("--market-order", action="store_true", help="Process Market Orders instead of GTT")
 
     args = parser.parse_args()

@@ -1,12 +1,13 @@
 import logging
 from kite_session import get_kite
-from google_sheets_utils import get_gsheet_client
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_worksheet
 from datetime import datetime
 
 
-PORTFOLIO_SHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
-ORDERS_SHEET = "ZERODHA_ORDERS"
-LATEST_ORDERS_TAB = "LATEST_ORDERS"
+ALGO_NAME = "PORTFOLIO_STOCKS"
+ORDERS_TAB_NAME = "ZERODHA_ORDERS"
+LATEST_ORDERS_TAB_NAME = "LATEST_ORDERS"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
@@ -39,7 +40,7 @@ def fetch_all_orders():
             # logging.info(f"Order Row: {row}")
         
         client = get_gsheet_client()
-        sheet = client.open_by_key(PORTFOLIO_SHEET_ID).worksheet(ORDERS_SHEET)
+        sheet = open_worksheet(client, ORDERS_TAB_NAME, spreadsheet_id=get_sheet_id(ALGO_NAME))
         
         headers = list(formatted[0].keys())
 
@@ -55,10 +56,10 @@ def fetch_all_orders():
         
         sheet.clear()
         sheet.update(values=values, range_name="A1")
-        logging.info(f"✅ {len(formatted)} orders written to sheet: {ORDERS_SHEET}")
+        logging.info(f"✅ {len(formatted)} orders written to sheet: {ORDERS_TAB_NAME}")
 
         # ---- Post Check: LATEST_ORDERS!I1 ----
-        latest_orders_sheet = client.open_by_key(PORTFOLIO_SHEET_ID).worksheet(LATEST_ORDERS_TAB)
+        latest_orders_sheet = open_worksheet(client, LATEST_ORDERS_TAB_NAME, spreadsheet_id=get_sheet_id(ALGO_NAME))
         check_value = latest_orders_sheet.acell("I1").value
 
         if check_value == "0":
