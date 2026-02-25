@@ -3,24 +3,14 @@
 import logging
 from kite_session import get_kite
 
-import gspread
-from google.oauth2.service_account import Credentials
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_spreadsheet
 
-from runtime_paths import get_creds_path
-
-CREDS_PATH = str(get_creds_path())
-SHEET_NAME = "SARAS Portfolio - Stocks"
+ALGO_NAME = "PORTFOLIO_STOCKS"
 TAB_NAME = "ZERODHA_PORTFOLIO"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
-def get_gsheet_client():
-    scopes = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scopes)
-    return gspread.authorize(creds)
 
 def fetch_holdings():
     kite = get_kite()
@@ -31,6 +21,7 @@ def fetch_holdings():
     except Exception as e:
         logging.error(f"❌ Failed to fetch holdings: {e}")
         return []
+
 
 def write_to_gsheet(holdings):
     if not holdings:
@@ -51,44 +42,40 @@ def write_to_gsheet(holdings):
             h.get("last_price"),
             h.get("pnl"),
             h.get("product"),
-            h.get("exchange"),
+            h.get("exchange")
         ]
         data.append(row)
 
-    # Connect to Google Sheet
-    gc = get_gsheet_client()
-    sh = gc.open(SHEET_NAME)
+    client = get_gsheet_client()
+    sh = open_spreadsheet(client, spreadsheet_id=get_sheet_id(ALGO_NAME))
     ws = sh.worksheet(TAB_NAME)
-
-    # Clear existing content and update with new data
     ws.clear()
     ws.update(values=data, range_name='A1')
-    logging.info(f"✅ Holdings written to {SHEET_NAME} [{TAB_NAME}]")
+    logging.info(f"✅ Successfully wrote {len(holdings)} holdings to Google Sheet: {TAB_NAME}")
 
-def check_portfolio_discrepancy():
-    SHEET_NAME = "SARAS Portfolio - Stocks"
-    TAB_NAME = "Portfolio"
-    CELL = "U1"
-    CELL_CHECK = "V1"
-    gc = get_gsheet_client()
-    sh = gc.open(SHEET_NAME)
+
+def check_cell_status():
+    client = get_gsheet_client()
+    sh = open_spreadsheet(client, spreadsheet_id=get_sheet_id(ALGO_NAME))
     ws = sh.worksheet(TAB_NAME)
+    CELL = "J1"
+    CELL_CHECK = "K1"
     try:
         cell_value = ws.acell(CELL).value
         cell_check_value = ws.acell(CELL_CHECK).value
-        if str(cell_value).strip() == "0":
-            logging.info("✅ All Good. Portfolio Matched Completely.")
+        if cell_value == "0" and cell_check_value == "True":
+            logging.info(f"✅ Process complete: {CELL}=0 and {CELL_CHECK}=True")
         else:
-            if str(cell_check_value).strip() == "0":
-                logging.warning(f"❌ Discrepancy Found! {cell_value} Tickers are not in sync & {cell_check_value} Tickers were bought")
-            if str(cell_check_value).strip() == str(cell_value).strip():
-                logging.warning(f"✅ All Good. {cell_value} Tickers are not in sync & {cell_check_value} Tickers were bought")              
-            else:
-                logging.warning(f"❌ Discrepancy Found! {cell_value} Tickers are not in sync & {cell_check_value} Tickers were bought")              
+            logging.error(f"❌ Process not complete: {CELL}={cell_value}, {CELL_CHECK}={cell_check_value}")
     except Exception as e:
-        logging.error(f"❌ Error while checking portfolio discrepancy: {e}")
+        logging.error(f"❌ Failed to read check cells: {e}")
 
-if __name__ == "__main__":
+
+def main():
     holdings = fetch_holdings()
     write_to_gsheet(holdings)
-    check_portfolio_discrepancy()
+    check_cell_status()
+
+
+if __name__ == "__main__":
+    main()

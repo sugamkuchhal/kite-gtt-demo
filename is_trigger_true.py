@@ -1,22 +1,17 @@
 #!/usr/bin/env python3
 
-from runtime_paths import get_creds_path
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import DEFAULT_READONLY_SCOPES, get_gsheet_client, open_worksheet
 
-SHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
-RANGE = "ALL_OLD_GTTs!R1"
+ALGO_NAME = "GTT_MASTER"
+TAB_NAME = "ALL_OLD_GTTs"
+CELL = "R1"
 
 def is_trigger_true():
     try:
-        import gspread
-        from google.oauth2.service_account import Credentials
-
-        scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-        creds = Credentials.from_service_account_file(str(get_creds_path()), scopes=scopes)
-        gc = gspread.authorize(creds)
-        sheet = gc.open_by_key(SHEET_ID)
-        result = sheet.values_get(RANGE, params={"valueRenderOption": "FORMATTED_VALUE"})
-        value = result.get("values", [[""]])[0][0]
-
+        client = get_gsheet_client(scopes=DEFAULT_READONLY_SCOPES)
+        ws = open_worksheet(client, TAB_NAME, spreadsheet_id=get_sheet_id(ALGO_NAME))
+        value = ws.acell(CELL).value
         return str(value).strip().lower() == "true"
     except Exception:
         return False
