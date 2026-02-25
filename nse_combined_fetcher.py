@@ -29,9 +29,10 @@ import requests
 import yfinance as yf
 from datetime import datetime
 import gspread
-from google.oauth2.service_account import Credentials
 from tqdm import tqdm
 
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_spreadsheet
 from runtime_paths import get_creds_path
 
 # gspread-formatting
@@ -44,7 +45,7 @@ except Exception:
 
 # ===== Editable defaults (set these once, or override via CLI) =====
 DEFAULT_CREDENTIALS_FILE = str(get_creds_path())
-DEFAULT_SPREADSHEET = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE"
+DEFAULT_SPREADSHEET = "NSE_MARKET_DATA_BANK"
 # ==================================================================
 
 # ----------------- Logging -----------------
@@ -244,15 +245,10 @@ class NSEBaseFetcher:
         return df
 
     # ----- Google Sheets helpers -----
-    def setup_google_sheets(self, credentials_file: str, spreadsheet_url_or_id: str):
-        scopes = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = Credentials.from_service_account_file(credentials_file, scopes=scopes)
-        client = gspread.authorize(creds)
-        if spreadsheet_url_or_id.startswith("http"):
-            spreadsheet_id = spreadsheet_url_or_id.split("/d/")[1].split("/")[0]
-        else:
-            spreadsheet_id = spreadsheet_url_or_id
-        spreadsheet = client.open_by_key(spreadsheet_id)
+    def setup_google_sheets(self, credentials_file: str, algo_name: str):
+        client = get_gsheet_client(creds_path=credentials_file)
+        spreadsheet_id = get_sheet_id(algo_name)
+        spreadsheet = open_spreadsheet(client, spreadsheet_id=spreadsheet_id)
         return client, spreadsheet
 
     def _col_letter(self, idx: int) -> str:
@@ -268,7 +264,7 @@ class NSEBaseFetcher:
     def upload_to_sheets(self,
                          df: pd.DataFrame,
                          credentials_file: str,
-                         spreadsheet_url_or_id: str,
+                         algo_name: str,
                          worksheet_name: str,
                          initial_batch_size: int = 200):
         """
@@ -276,7 +272,7 @@ class NSEBaseFetcher:
         Also applies full formatting: 2-decimals for numeric columns, date format for Last_Updated,
         and freezes header row.
         """
-        client, spreadsheet = self.setup_google_sheets(credentials_file, spreadsheet_url_or_id)
+        client, spreadsheet = self.setup_google_sheets(credentials_file, algo_name)
         try:
             worksheet = spreadsheet.worksheet(worksheet_name)
             worksheet.clear()

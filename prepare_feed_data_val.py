@@ -1,18 +1,11 @@
 from datetime import datetime, date
-import gspread
-from google.oauth2.service_account import Credentials
+from algo_sheets_lookup import get_sheet_id
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_spreadsheet
 
-from runtime_paths import get_creds_path
-
-CREDS_PATH = str(get_creds_path())
-
-def get_ws(sheet_name, tab_name):
-    creds = Credentials.from_service_account_file(
-        CREDS_PATH,
-        scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    )
-    gc = gspread.authorize(creds)
-    sh = gc.open(sheet_name)
+def get_ws(algo_name, tab_name):
+    gc = get_gsheet_client()
+    sh = open_spreadsheet(gc, spreadsheet_id=get_sheet_id(algo_name))
     ws = sh.worksheet(tab_name)
     return sh, ws
 
@@ -39,11 +32,11 @@ def check_gt_threshold(sheet_title, ws, cell, threshold=0.995):
 
 # ==== Threshold Check Example Usage: ====
 
-sh1_src, ws1_src = get_ws("Algo Master Feed Sheet", "SGST_OPEN_LIST")
+sh1_src, ws1_src = get_ws("ALGO_MASTER_FEED_SHEET", "SGST_OPEN_LIST")
 check_gt_threshold(sh1_src.title, ws1_src, "G1")  
 
-sh2_src, ws2_src = get_ws("Algo Master Feed Sheet", "SUPER_OPEN_LIST")
+sh2_src, ws2_src = get_ws("ALGO_MASTER_FEED_SHEET", "SUPER_OPEN_LIST")
 check_gt_threshold(sh2_src.title, ws2_src, "G1") 
 
-sh3_src, ws3_src = get_ws("Algo Master Feed Sheet", "TURTLE_OPEN_LIST")
+sh3_src, ws3_src = get_ws("ALGO_MASTER_FEED_SHEET", "TURTLE_OPEN_LIST")
 check_gt_threshold(sh3_src.title, ws3_src, "G1") 

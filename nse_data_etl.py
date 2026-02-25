@@ -1,18 +1,15 @@
-import gspread
-from google.oauth2.service_account import Credentials
 import pandas as pd
 from datetime import datetime
 import re
 from gspread_formatting import format_cell_range, cellFormat, numberFormat
 
-from runtime_paths import get_creds_path
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_spreadsheet
 
-
-CREDS_PATH = str(get_creds_path())
-SOURCE_SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE"
+SOURCE_ALGO_NAME = "NSE_MARKET_DATA_BANK"
 STOCK_SHEET_NAME = "NSE_Stock_Data"
 ETF_SHEET_NAME = "NSE_ETF_Data"
-DEST_SPREADSHEET_NAME = "Algo Master Data Bank"
+DEST_ALGO_NAME = "ALGO_MASTER_DATA_BANK"
 INC_WS = "BANK_INC"
 NEW_WS = "BANK_NEW"
 TICKERS_WS = "TICKERS"
@@ -40,7 +37,7 @@ def parse_date_formula(date_formula_str):
         return str(date_formula_str)
 
 def load_and_clean(client, tabname):
-    ws = client.open_by_url(SOURCE_SPREADSHEET_URL).worksheet(tabname)
+    ws = open_spreadsheet(client, spreadsheet_id=get_sheet_id(SOURCE_ALGO_NAME)).worksheet(tabname)
     df = pd.DataFrame(ws.get_all_records())
     req = ["Symbol", "Current_Price", "Day_Low", "Day_High", "Volume (in Cr.)", "Last_Updated"]
     df = df[req]
@@ -66,7 +63,7 @@ def clear_ws_except_header(ws):
         ws.batch_clear([clear_range])
 
 def get_ticker_type_map(client):
-    ws = client.open(DEST_SPREADSHEET_NAME).worksheet(TICKERS_WS)
+    ws = open_spreadsheet(client, spreadsheet_id=get_sheet_id(DEST_ALGO_NAME)).worksheet(TICKERS_WS)
     # TICKERS sheet has headers: TICKER | TYPE
     data = ws.get_all_records(expected_headers=["TICKER", "TYPE"])
     # Create mapping with NSE: prefix, matching your SYMBOL columns everywhere else
@@ -118,11 +115,7 @@ def process_and_update():
     print(f"")
     print(f"[NSE ETL PROCESS START] {start_time.strftime('%Y-%m-%d %H:%M:%S')} - Starting process_and_update")
 
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=[
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive"
-    ])
-    client = gspread.authorize(creds)
+    client = get_gsheet_client()
 
     ticker_type_map = get_ticker_type_map(client)
 
@@ -152,14 +145,14 @@ def process_and_update():
         bankinc_rows.append(values)
 
     # 3. WRITE BANK_INC (batched, with TYPE formula)
-    ws_inc = client.open(DEST_SPREADSHEET_NAME).worksheet(INC_WS)
+    ws_inc = open_spreadsheet(client, spreadsheet_id=get_sheet_id(DEST_ALGO_NAME)).worksheet(INC_WS)
     clear_ws_except_header(ws_inc)
     for idx, row in enumerate(bankinc_rows, start=2):
         row[6] = f'=IFERROR(VLOOKUP(B{idx},TICKERS!A:C,3,FALSE))'
     ws_inc.append_rows(bankinc_rows, value_input_option="USER_ENTERED")
 
     # 4. PREP BANK_NEW updates (with only VALUES, no formulas!)
-    ws_new = client.open(DEST_SPREADSHEET_NAME).worksheet(NEW_WS)
+    ws_new = open_spreadsheet(client, spreadsheet_id=get_sheet_id(DEST_ALGO_NAME)).worksheet(NEW_WS)
     all_rows, by_ticker, idx_by_date_sym = load_bank_new_indexed(ws_new)
     to_overwrite = []
     to_append = []
@@ -233,7 +226,7 @@ if __name__ == "__main__":
     import time
     time.sleep(180)
 
-    # ------------------ POST-CHECKS: simple prints against DEST_SPREADSHEET_NAME/BANK_FINAL ----
+    # ------------------ POST-CHECKS: simple prints against DEST_ALGO_NAME/BANK_FINAL ----
     def _check_cell_and_log(spreadsheet, tab_name, cell_addr, friendly_name=None):
         """
         Read spreadsheet.worksheet(tab_name).acell(cell_addr).value and print:
@@ -270,14 +263,12 @@ if __name__ == "__main__":
     # This recreates a client so the post-check is independent of local client variables.
     spreadsheet = None
     try:
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scope)
-        client_post = gspread.authorize(creds)
-        # DEST_SPREADSHEET_NAME is the destination used elsewhere in this module (Algo Master Data Bank)
-        spreadsheet = client_post.open(DEST_SPREADSHEET_NAME)
+        client_post = get_gsheet_client()
+        # DEST_ALGO_NAME is the destination used elsewhere in this module (Algo Master Data Bank)
+        spreadsheet = open_spreadsheet(client_post, spreadsheet_id=get_sheet_id(DEST_ALGO_NAME))
     except Exception as e:
         spreadsheet = None
-        print(f"❌ Could not open destination spreadsheet '{globals().get('DEST_SPREADSHEET_NAME', '<not-set>')}' for post-checks: {e}")
+        print(f"❌ Could not open destination spreadsheet '{globals().get('DEST_ALGO_NAME', '<not-set>')}' for post-checks: {e}")
     
     if spreadsheet is None:
         print("❌ Could not resolve Spreadsheet object for post-checks. Skipping post-checks.")

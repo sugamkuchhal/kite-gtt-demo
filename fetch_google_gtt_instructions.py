@@ -3,7 +3,7 @@ import logging
 import argparse
 
 # Use the Google Sheets helpers
-from google_sheets_utils import get_gsheet_client, read_rows_from_sheet
+from google_sheets_utils import get_gsheet_client, open_worksheet, read_rows_from_sheet
 
 # --- Batch size: single source of truth from config.py ---
 try:
@@ -48,7 +48,7 @@ def get_instructions_sheet(sheet_id=None, sheet_name=None):
         raise ValueError("Please provide sheet_id and sheet_name (or set them in config)")
 
     client = get_gsheet_client()
-    sheet = client.open_by_key(sheet_id).worksheet(sheet_name)
+    sheet = open_worksheet(client, sheet_name, spreadsheet_id=sheet_id)
 
     logging.info(f"Accessed instructions sheet: {sheet_name}")
     return sheet

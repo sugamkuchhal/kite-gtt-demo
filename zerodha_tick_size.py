@@ -1,10 +1,11 @@
 # zerodha_tick_size_no_notfound.py
 import importlib.util
-import gspread
 from kiteconnect import KiteConnect
 import sys
 
-from runtime_paths import get_api_key_path, get_creds_path
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_spreadsheet
+from runtime_paths import get_api_key_path
 
 GSPREAD_FORMATTING_AVAILABLE = importlib.util.find_spec("gspread_formatting") is not None
 if GSPREAD_FORMATTING_AVAILABLE:
@@ -15,10 +16,9 @@ else:
     NumberFormat = None
 
 API_KEY_FILE = get_api_key_path()
-CREDS_JSON_PATH = str(get_creds_path())
-SHEET_URL = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE/edit"
-TICKERS_SHEET_NAME = "TICKERS_TICK_SIZE"
-ZERODHA_SHEET_NAME = "ZERODHA_TICKERS"
+ALGO_NAME = "NSE_MARKET_DATA_BANK"
+TICKERS_TAB_NAME = "TICKERS_TICK_SIZE"
+ZERODHA_TAB_NAME = "ZERODHA_TICKERS"
 
 CLEAR_SENTINEL = ""                  # what to write into cleared cells (blank)
 NUMBER_PATTERN = "0.00"              # gspread-formatting pattern for 2 decimals
@@ -47,9 +47,9 @@ for inst in instruments:
 print(f"Loaded {len(instrument_map)} instruments.")
 
 # ----------------------- open sheet (single) -----------------------
-gc = gspread.service_account(filename=CREDS_JSON_PATH)
-ss = gc.open_by_url(SHEET_URL)
-tick_sheet = ss.worksheet(TICKERS_SHEET_NAME)
+client = get_gsheet_client()
+ss = open_spreadsheet(client, spreadsheet_id=get_sheet_id(ALGO_NAME))
+tick_sheet = ss.worksheet(TICKERS_TAB_NAME)
 
 # ----------------------- read column A (detect last non-empty row) -----------------------
 col_a = tick_sheet.col_values(1)  # returns up to last non-empty in col A
@@ -118,7 +118,7 @@ for i in range(n_data_rows):
         updates_col_d[i] = [CLEAR_SENTINEL]
         updates_col_e[i] = [CLEAR_SENTINEL]
         not_found_even_with_alt.append(main_ticker)
-        log_lines.append(f"  -> Not found in {ZERODHA_SHEET_NAME} col C")
+        log_lines.append(f"  -> Not found in {ZERODHA_TAB_NAME} col C")
         continue
 
     # we have an alternate; write it into column D

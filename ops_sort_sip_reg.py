@@ -1,17 +1,13 @@
-import gspread
 import argparse
 import time
-from google.oauth2.service_account import Credentials
 
-from runtime_paths import get_creds_path
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_spreadsheet
 
-CREDS_PATH = str(get_creds_path())
 
-def load_sheet(sheet_name):
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scope)
-    client = gspread.authorize(creds)
-    return client.open(sheet_name)
+def load_sheet(algo_name):
+    client = get_gsheet_client()
+    return open_spreadsheet(client, spreadsheet_id=get_sheet_id(algo_name))
 
 def central_buy_update(action_sheet, special_target_sheet, filter_col_letter="O", dest_col_letter="I", uncheck=False):
     special_target_sheet.batch_clear([f"{dest_col_letter}2:{dest_col_letter}"])
@@ -84,17 +80,17 @@ def mkt_kwk_ops_sort_email(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Central BUY Update Script (cross-sheet)")
-    parser.add_argument("--sheet-name", required=True, help="Main Google Sheet file name")
+    parser.add_argument("--algo-name", required=True, help="Main Google Sheet file name")
     parser.add_argument("--action-sheet", required=True, help="Action_List sheet/tab name (in main file)")
-    parser.add_argument("--special-target-sheet-file", required=True, help="Special target Google Sheet file name")
+    parser.add_argument("--special-target-algo-name", required=True, help="Special target Google Sheet file name")
     parser.add_argument("--special-target-sheet", required=True, help="Special target sheet/tab name (in special file)")
     parser.add_argument("--uncheck", action="store_true", help="If set, disables column O filtering and copies all non-empty A")
     args = parser.parse_args()
 
     mkt_kwk_ops_sort_email(
-        main_sheet_file=args.sheet_name,
+        main_sheet_file=args.algo_name,
         action_sheet_name=args.action_sheet,
-        special_target_sheet_file=args.special_target_sheet_file,
+        special_target_sheet_file=args.special_target_algo_name,
         special_target_sheet_name=args.special_target_sheet,
         uncheck=args.uncheck
     )

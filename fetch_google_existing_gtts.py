@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import logging
 import argparse
-from google_sheets_utils import get_gsheet_client, read_rows_from_sheet
+from google_sheets_utils import get_gsheet_client, open_worksheet, read_rows_from_sheet
 
 # --- Batch size: single source of truth from config.py ---
 try:
@@ -54,7 +54,7 @@ def get_tracking_sheet(sheet_id=None, sheet_name=None):
         raise ValueError("sheet_id and sheet_name must be provided either as args or via config")
 
     client = get_gsheet_client()
-    sheet = client.open_by_key(sheet_id).worksheet(sheet_name)
+    sheet = open_worksheet(client, sheet_name, spreadsheet_id=sheet_id)
 
     logging.info(f"Accessed GTT sheet: {sheet_name}")
     return sheet

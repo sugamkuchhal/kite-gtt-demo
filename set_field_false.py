@@ -1,32 +1,17 @@
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_worksheet
 
-from runtime_paths import get_creds_path
-
-# Path to your service account JSON file
-SERVICE_ACCOUNT_FILE = str(get_creds_path())
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-
-SPREADSHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
-SHEET_NAME = "ALL_OLD_GTTs"
+ALGO_NAME = "GTT_MASTER"
+TAB_NAME = "ALL_OLD_GTTs"
 CELL = "R1"
 
+
 def main():
-    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    service = build("sheets", "v4", credentials=creds)
+    client = get_gsheet_client()
+    ws = open_worksheet(client, TAB_NAME, spreadsheet_id=get_sheet_id(ALGO_NAME))
+    ws.update(range_name=CELL, values=[["FALSE"]], value_input_option="USER_ENTERED")
+    print(f"Updated {CELL} in {TAB_NAME} to FALSE")
 
-    body = {
-        "values": [["FALSE"]]
-    }
-
-    result = service.spreadsheets().values().update(
-        spreadsheetId=SPREADSHEET_ID,
-        range=f"{SHEET_NAME}!{CELL}",
-        valueInputOption="USER_ENTERED",
-        body=body
-    ).execute()
-
-    print(f"Updated {CELL} in {SHEET_NAME} to FALSE")
 
 if __name__ == "__main__":
     main()
