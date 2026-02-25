@@ -138,7 +138,7 @@ def read_inc_keys(client: gspread.client.Client, source_spreadsheet_id: str, inc
 
 def find_keys_in_sheet_paged(client: gspread.client.Client, spreadsheet_id: str, sheet_name: str,
                              keys_set: List[Tuple[str,str]], page_size: int = DEFAULT_PAGE_SIZE) -> Dict[Tuple[str,str], List[int]]:
-    ss = open_spreadsheet(client, spreadsheet_id=spreadsheet_url)
+    ss = open_spreadsheet(client, spreadsheet_id=spreadsheet_id)
     ws = ss.worksheet(sheet_name)
     total_rows = ws.row_count
     keys_needed = set(keys_set)
@@ -169,7 +169,7 @@ def read_rows_by_indices(client: gspread.client.Client, spreadsheet_id: str, she
                          row_indices: List[int], last_col: str = "G") -> Dict[int, List[Any]]:
     if not row_indices:
         return {}
-    ss = open_spreadsheet(client, spreadsheet_id=spreadsheet_url)
+    ss = open_spreadsheet(client, spreadsheet_id=spreadsheet_id)
     ws = ss.worksheet(sheet_name)
     idxs_sorted = sorted(set(row_indices))
     groups = _group_contiguous(idxs_sorted)
@@ -184,7 +184,7 @@ def read_rows_by_indices(client: gspread.client.Client, spreadsheet_id: str, she
 def delete_rows_descending(client: gspread.client.Client, spreadsheet_id: str, sheet_name: str, row_indices: List[int]):
     if not row_indices:
         return
-    ss = open_spreadsheet(client, spreadsheet_id=spreadsheet_url)
+    ss = open_spreadsheet(client, spreadsheet_id=spreadsheet_id)
     ws = ss.worksheet(sheet_name)
     unique_desc = sorted(set(row_indices), reverse=True)
     for r in unique_desc:
@@ -198,7 +198,7 @@ def batch_overwrite_rows(client: gspread.client.Client, spreadsheet_id: str, she
                          updates: List[Tuple[int, List[Any]]], batch_size: int = DEFAULT_BATCH_UPDATE_SIZE, last_col: str = "G"):
     if not updates:
         return
-    ss = open_spreadsheet(client, spreadsheet_id=spreadsheet_url)
+    ss = open_spreadsheet(client, spreadsheet_id=spreadsheet_id)
     ws = ss.worksheet(sheet_name)
     updates_sorted = sorted(updates, key=lambda x: x[0])
     groups = []
@@ -236,7 +236,7 @@ def batch_append_rows(client: gspread.client.Client, spreadsheet_id: str, sheet_
                       rows_to_append: List[List[Any]], append_chunk: int = DEFAULT_APPEND_CHUNK):
     if not rows_to_append:
         return
-    ss = open_spreadsheet(client, spreadsheet_id=spreadsheet_url)
+    ss = open_spreadsheet(client, spreadsheet_id=spreadsheet_id)
     ws = ss.worksheet(sheet_name)
     i = 0
     total = len(rows_to_append)
@@ -254,7 +254,7 @@ def copy_formulas_hi_where_blank(client: gspread.client.Client, spreadsheet_id: 
                                  target_ranges: List[Tuple[int,int]]):
     if not target_ranges:
         return
-    ss = open_spreadsheet(client, spreadsheet_id=spreadsheet_url)
+    ss = open_spreadsheet(client, spreadsheet_id=spreadsheet_id)
     ws = ss.worksheet(sheet_name)
     try:
         template = ws.get("H2:I2", value_render_option="FORMULA") or [["",""]]

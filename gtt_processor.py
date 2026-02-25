@@ -28,7 +28,6 @@ import datetime
 import hashlib
 import random
 import socket
-import datetime
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")

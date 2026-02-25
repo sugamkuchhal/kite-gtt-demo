@@ -1,6 +1,5 @@
 from datetime import datetime, date
 from algo_sheets_lookup import get_sheet_id
-from algo_sheets_lookup import get_sheet_id
 from google_sheets_utils import get_gsheet_client, open_spreadsheet
 
 def get_ws(algo_name, tab_name):
