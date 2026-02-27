@@ -1,22 +1,19 @@
 import pandas as pd
 from datetime import datetime
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 
-from runtime_paths import get_creds_path
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_spreadsheet
 
 # --- CONFIG ---
-SPREADSHEET_NAME = "SARAS Portfolio - Stocks"
-WORKSHEET_NAME = "ALL_ORDERS"
-CREDENTIALS_FILE = str(get_creds_path())
+ALGO_NAME = "PORTFOLIO_STOCKS"
+TAB_NAME = "ALL_ORDERS"
 
 # --- STEP 1: DOWNLOAD DATA FROM GOOGLE SHEETS ---
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
-client = gspread.authorize(creds)
+client = get_gsheet_client()
 
-sheet = client.open(SPREADSHEET_NAME)
-worksheet = sheet.worksheet(WORKSHEET_NAME)
+sheet = open_spreadsheet(client, spreadsheet_id=get_sheet_id(ALGO_NAME))
+worksheet = sheet.worksheet(TAB_NAME)
 data = worksheet.get_all_records()
 
 df = pd.DataFrame(data)

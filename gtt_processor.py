@@ -28,7 +28,6 @@ import datetime
 import hashlib
 import random
 import socket
-import datetime
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
@@ -795,16 +794,25 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Process GTT instructions. Only accepts --sheet-id and --sheet-name which override config values."
+        description="Process GTT instructions. --sheet-id and --tab-name (or legacy --sheet-name) override config values."
     )
-    parser.add_argument("--sheet-id", dest="sheet_id", help="Instruction sheet ID (overrides config.INSTRUCTION_SHEET_ID)", type=str)
-    parser.add_argument("--sheet-name", dest="sheet_name", help="Instruction worksheet name (overrides config.INSTRUCTION_SHEET_NAME)", type=str)
+    parser.add_argument("--sheet-id", dest="sheet_id", help="Instruction sheet ID (overrides lookup/config default)", type=str)
+    parser.add_argument(
+        "--tab-name",
+        "--sheet-name",
+        dest="tab_name",
+        help="Instruction TAB_NAME (overrides config.INSTRUCTION_TAB_NAME)",
+        type=str,
+    )
     parser.add_argument("--market-order", action="store_true", help="Process Market Orders instead of GTT")
 
     args = parser.parse_args()
 
     # If provided on CLI, use them; otherwise get_instructions_sheet will fall back to config
-    instruction_sheet = get_instructions_sheet(sheet_id=getattr(args, "sheet_id", None), sheet_name=getattr(args, "sheet_name", None))
+    instruction_sheet = get_instructions_sheet(
+        sheet_id=getattr(args, "sheet_id", None),
+        tab_name=getattr(args, "tab_name", None),
+    )
 
     kite = get_kite()
     

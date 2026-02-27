@@ -1,22 +1,18 @@
-import gspread
-from google.oauth2.service_account import Credentials
 import time
 import logging
 from datetime import datetime
 
-from runtime_paths import get_creds_path
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_spreadsheet
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Google credentials
-CREDENTIALS_FILE = str(get_creds_path())
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1TX4Q8YG0-d2_L1YOhvb9OYDgklvHj3eFK76JN7Pdavg/edit?gid=187190800#gid=187190800"
+ALGO_NAME = "ALGO_MASTER_DATA_BANK"
 
 # Authorize
-scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scope)
-client = gspread.authorize(creds)
-spreadsheet = client.open_by_url(SPREADSHEET_URL)
+client = get_gsheet_client()
+spreadsheet = open_spreadsheet(client, spreadsheet_id=get_sheet_id(ALGO_NAME))
 
 # Sheets
 symbol_sheet = spreadsheet.worksheet("SYMBOL")

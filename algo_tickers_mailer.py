@@ -2,8 +2,6 @@
 import argparse
 import logging
 import sys
-import gspread
-from google.oauth2.service_account import Credentials
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -12,6 +10,8 @@ import getpass
 import json
 import os
 
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import DEFAULT_READONLY_SCOPES, get_gsheet_client, open_worksheet
 from runtime_paths import get_creds_path, get_smtp_token_path
 
 SMTP_TOKEN_FILE = str(get_smtp_token_path())
@@ -19,7 +19,7 @@ SMTP_TOKEN_FILE = str(get_smtp_token_path())
 # ==========================
 # Config (constants)
 # ==========================
-SHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
+ALGO_NAME = "GTT_MASTER"
 TAB_NAME = "Action_Mailing_List"
 SERVICE_CREDS = str(get_creds_path())
 
@@ -65,10 +65,8 @@ def save_smtp_token(smtp_password, path=SMTP_TOKEN_FILE):
 
 def read_sheet(sheet_id, tab_name, service_creds):
     logging.info("Authenticating to Google Sheets with service account: %s", service_creds)
-    scope = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    creds = Credentials.from_service_account_file(service_creds, scopes=scope)
-    client = gspread.authorize(creds)
-    ws = client.open_by_key(sheet_id).worksheet(tab_name)
+    client = get_gsheet_client(scopes=DEFAULT_READONLY_SCOPES, creds_path=service_creds)
+    ws = open_worksheet(client, tab_name, spreadsheet_id=sheet_id)
     rows = ws.get_all_values()
     logging.info("Read %d total rows (including header/empty rows) from tab '%s'.", len(rows), tab_name)
     return rows
@@ -143,7 +141,7 @@ def main():
     args = parse_args()
     recipients = [e.strip() for e in args.emails.split(",") if e.strip()]
 
-    rows = read_sheet(SHEET_ID, TAB_NAME, SERVICE_CREDS)
+    rows = read_sheet(get_sheet_id(ALGO_NAME), TAB_NAME, SERVICE_CREDS)
     header, data = rows[0], rows[1:]
 
     # Columns: A,B,D,O

@@ -1,26 +1,15 @@
-import gspread
-from google.oauth2.service_account import Credentials
-
-from runtime_paths import get_creds_path
-
-CREDS_PATH = str(get_creds_path())
-SHEET_NAME = "SARAS Portfolio - Stocks"
+from algo_sheets_lookup import get_sheet_id
+from google_sheets_utils import get_gsheet_client, open_spreadsheet
+ALGO_NAME = "PORTFOLIO_STOCKS"
 SRC_TAB = "LATEST_ORDERS"
 DEST_TAB = "NEW_ORDERS"
 SRC_RANGE = "A:H"  # covers columns A to H
 
 def main():
-    creds = Credentials.from_service_account_file(
-        CREDS_PATH,
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-    )
-    gc = gspread.authorize(creds)
+    client = get_gsheet_client()
 
     # Open source and destination worksheet (same file)
-    sh = gc.open(SHEET_NAME)
+    sh = open_spreadsheet(client, spreadsheet_id=get_sheet_id(ALGO_NAME))
     ws_src = sh.worksheet(SRC_TAB)
     ws_dest = sh.worksheet(DEST_TAB)
 
