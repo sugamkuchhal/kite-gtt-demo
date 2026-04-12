@@ -2,10 +2,9 @@ name: Unified Script Runner
 
 on:
   schedule:
-    - cron: "0,30 4-9 * * 1-5"   # 09:30–15:00 IST every 30 mins, Mon–Fri
-    - cron: "30 10 * * 1-5"      # 16:00 IST (4:00 PM) Mon–Fri
-    - cron: "15 3 * * *"         # 08:45 IST (all days)
-    - cron: "45 2 * * *"         # 08:15 IST (all days)
+    - cron: "0,15,30,45 4-9 * * 1-5"   # 09:30–15:15 IST every 30 mins, Mon–Fri
+    - cron: "30 12 * * 1-5"      # 18:00 IST (4:00 PM) Mon–Fri
+    - cron: "0,15,30 3 * * *"         # 08:30,08:45,09:00 IST (all days)
   workflow_dispatch:
     inputs:
       mode:
@@ -78,11 +77,11 @@ jobs:
               NOW_DOW=$(TZ=Asia/Kolkata date +%u) # 1=Mon ... 7=Sun
               NOW_MIN=$(hm_to_min "$NOW_HM")
               REFRESH_START=$(hm_to_min "08:00")
-              REFRESH_END=$(hm_to_min "09:00")
-              MID_START=$(hm_to_min "09:00")
-              MID_END=$(hm_to_min "15:45")
-              EOD_START=$(hm_to_min "15:45")
-              EOD_END=$(hm_to_min "17:00")
+              REFRESH_END=$(hm_to_min "09:10")
+              MID_START=$(hm_to_min "09:15")
+              MID_END=$(hm_to_min "15:20")
+              EOD_START=$(hm_to_min "17:30")
+              EOD_END=$(hm_to_min "18:30")
               IS_WEEKDAY=false
               if [ "$NOW_DOW" -ge 1 ] && [ "$NOW_DOW" -le 5 ]; then
                 IS_WEEKDAY=true
