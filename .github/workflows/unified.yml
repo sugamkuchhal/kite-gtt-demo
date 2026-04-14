@@ -9,26 +9,25 @@ on:
  #   - cron: "15 3 * * *"         # 08:30,08:45,09:00 IST (all days)
   workflow_dispatch:
     inputs:
+      script:
+        description: "Script mode: script to run (e.g. zerodha_tick_size)."
+        required: false
+        default: ""
       mode:
         description: "Run mode: auto | refresh | midday | eod | script"
         required: false
         type: choice
         options:
           - auto
-          - refresh
-          - midday
           - eod
-          - script
+          - midday
+          - refresh
         default: auto
-      script:
-        description: "Script mode: script to run (e.g. zerodha_tick_size)."
-        required: false
-        default: ""
 
 # Overlap safety: queue new runs until the current one finishes
 concurrency:
   group: unified-script-runner
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -53,53 +52,52 @@ jobs:
           CMD_VAL="${SCRIPT:-}"
 
           ACTION="none"
-          case "$MODE_VAL" in
-            script)
-              if [ -z "$CMD_VAL" ]; then
-                echo "::error::mode=script requires a command (e.g. zerodha_tick_size)."
-                exit 2
-              fi
-              ACTION="script"
-              ;;
-            refresh)
-              ACTION="refresh"
-              ;;
-            midday)
-              ACTION="midday"
-              ;;
-            eod)
-              ACTION="eod"
-              ;;
-            auto|*)
-              hm_to_min() {
-                IFS=: read -r h m <<<"$1"
-                echo $((10#$h*60 + 10#$m))
-              }
-              NOW_HM=$(TZ=Asia/Kolkata date +%H:%M)
-              NOW_DOW=$(TZ=Asia/Kolkata date +%u) # 1=Mon ... 7=Sun
-              NOW_MIN=$(hm_to_min "$NOW_HM")
-              REFRESH_START=$(hm_to_min "08:00")
-              REFRESH_END=$(hm_to_min "09:10")
-              MID_START=$(hm_to_min "09:15")
-              MID_END=$(hm_to_min "15:20")
-              EOD_START=$(hm_to_min "17:30")
-              EOD_END=$(hm_to_min "18:30")
-              IS_WEEKDAY=false
-              if [ "$NOW_DOW" -ge 1 ] && [ "$NOW_DOW" -le 5 ]; then
-                IS_WEEKDAY=true
-              fi
-              if [ $NOW_MIN -gt $REFRESH_START ] && [ $NOW_MIN -lt $REFRESH_END ]; then
-                ACTION="refresh"
-              elif [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -ge $MID_START ] && [ $NOW_MIN -le $MID_END ]; then
-                ACTION="midday"
-              elif [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -gt $EOD_START ] && [ $NOW_MIN -lt $EOD_END ]; then
-                ACTION="eod"
-              else
-                ACTION="none"
-              fi
-              ;;
-          esac
 
+          # 🔴 NEW: script override (highest priority)
+          if [ -n "$CMD_VAL" ]; then
+            ACTION="script"
+          else
+            case "$MODE_VAL" in
+              refresh)
+                ACTION="refresh"
+                ;;
+              midday)
+                ACTION="midday"
+                ;;
+              eod)
+                ACTION="eod"
+                ;;
+              auto|*)
+                hm_to_min() {
+                  IFS=: read -r h m <<<"$1"
+                  echo $((10#$h*60 + 10#$m))
+                }
+                NOW_HM=$(TZ=Asia/Kolkata date +%H:%M)
+                NOW_DOW=$(TZ=Asia/Kolkata date +%u) # 1=Mon ... 7=Sun
+                NOW_MIN=$(hm_to_min "$NOW_HM")
+                REFRESH_START=$(hm_to_min "08:00")
+                REFRESH_END=$(hm_to_min "09:10")
+                MID_START=$(hm_to_min "09:15")
+                MID_END=$(hm_to_min "15:20")
+                EOD_START=$(hm_to_min "17:30")
+                EOD_END=$(hm_to_min "18:30")
+                IS_WEEKDAY=false
+                if [ "$NOW_DOW" -ge 1 ] && [ "$NOW_DOW" -le 5 ]; then
+                  IS_WEEKDAY=true
+                fi
+                if [ $NOW_MIN -gt $REFRESH_START ] && [ $NOW_MIN -lt $REFRESH_END ]; then
+                  ACTION="refresh"
+                elif [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -ge $MID_START ] && [ $NOW_MIN -le $MID_END ]; then
+                  ACTION="midday"
+                elif [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -gt $EOD_START ] && [ $NOW_MIN -lt $EOD_END ]; then
+                  ACTION="eod"
+                else
+                  ACTION="none"
+                fi
+                ;;
+            esac
+          fi
+          
           SHOULD_RUN=true
           if [ "$ACTION" = "none" ]; then
             SHOULD_RUN=false
