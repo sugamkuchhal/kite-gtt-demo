@@ -14,15 +14,13 @@ on:
         required: false
         default: ""
       mode:
-        description: "Run mode: auto | refresh | midday | eod | script"
+        description: "Run mode: eod | midday | refresh"
         required: false
         type: choice
         options:
-          - auto
           - eod
           - midday
           - refresh
-        default: auto
 
 # Overlap safety: queue new runs until the current one finishes
 concurrency:
@@ -48,52 +46,35 @@ jobs:
         run: |
           set -euo pipefail
 
-          MODE_VAL="${MODE:-auto}"
+          MODE_VAL="${MODE:-}"
           CMD_VAL="${SCRIPT:-}"
-
+          CRON_EXPR="${{ github.event.schedule }}"
+          EVENT_NAME="${{ github.event_name }}"
+          
           ACTION="none"
-
-          # 🔴 NEW: script override (highest priority)
+          
+          # 1. Script override
           if [ -n "$CMD_VAL" ]; then
             ACTION="script"
-          else
-            case "$MODE_VAL" in
-              refresh)
-                ACTION="refresh"
-                ;;
-              midday)
+          
+          # 2. Manual mode (explicit)
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$MODE_VAL" ]; then
+            ACTION="$MODE_VAL"
+          
+          # 3. Scheduled run → map cron → action
+          elif [ "$EVENT_NAME" = "schedule" ]; then
+            case "$CRON_EXPR" in
+              "0,30 4-9 * * 1-5")
                 ACTION="midday"
                 ;;
-              eod)
+              "30 12 * * 1-5")
                 ACTION="eod"
                 ;;
-              auto|*)
-                hm_to_min() {
-                  IFS=: read -r h m <<<"$1"
-                  echo $((10#$h*60 + 10#$m))
-                }
-                NOW_HM=$(TZ=Asia/Kolkata date +%H:%M)
-                NOW_DOW=$(TZ=Asia/Kolkata date +%u) # 1=Mon ... 7=Sun
-                NOW_MIN=$(hm_to_min "$NOW_HM")
-                REFRESH_START=$(hm_to_min "08:00")
-                REFRESH_END=$(hm_to_min "09:10")
-                MID_START=$(hm_to_min "09:15")
-                MID_END=$(hm_to_min "15:20")
-                EOD_START=$(hm_to_min "17:30")
-                EOD_END=$(hm_to_min "18:30")
-                IS_WEEKDAY=false
-                if [ "$NOW_DOW" -ge 1 ] && [ "$NOW_DOW" -le 5 ]; then
-                  IS_WEEKDAY=true
-                fi
-                if [ $NOW_MIN -gt $REFRESH_START ] && [ $NOW_MIN -lt $REFRESH_END ]; then
-                  ACTION="refresh"
-                elif [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -ge $MID_START ] && [ $NOW_MIN -le $MID_END ]; then
-                  ACTION="midday"
-                elif [ "$IS_WEEKDAY" = true ] && [ $NOW_MIN -gt $EOD_START ] && [ $NOW_MIN -lt $EOD_END ]; then
-                  ACTION="eod"
-                else
-                  ACTION="none"
-                fi
+              "0,30 3 * * *")
+                ACTION="refresh"
+                ;;
+              *)
+                ACTION="none"
                 ;;
             esac
           fi
@@ -103,7 +84,7 @@ jobs:
             SHOULD_RUN=false
             echo "::notice::auto window=none; exiting without action"
           else
-            echo "::notice::action=${ACTION} (mode=${MODE_VAL})"
+            echo "::notice::action=${ACTION} (event=${EVENT_NAME})"
           fi
 
           echo "action=$ACTION" >> "$GITHUB_OUTPUT"
