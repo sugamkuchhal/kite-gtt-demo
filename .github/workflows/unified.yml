@@ -18,6 +18,7 @@ on:
         required: false
         type: choice
         options:
+          - SELECT
           - eod
           - midday
           - refresh
@@ -58,7 +59,7 @@ jobs:
             ACTION="script"
           
           # 2. Manual mode (explicit)
-          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$MODE_VAL" ]; then
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$MODE_VAL" != "SELECT" ]; then
             ACTION="$MODE_VAL"
           
           # 3. Scheduled run → map cron → action
@@ -82,7 +83,7 @@ jobs:
           SHOULD_RUN=true
           if [ "$ACTION" = "none" ]; then
             SHOULD_RUN=false
-            echo "::notice::auto window=none; exiting without action"
+            echo "::notice::No action selected (SELECT). Exiting."
           else
             echo "::notice::action=${ACTION} (event=${EVENT_NAME})"
           fi
