@@ -52,6 +52,20 @@ jobs:
           CRON_EXPR="${{ github.event.schedule }}"
           EVENT_NAME="${{ github.event_name }}"
           
+          TODAY=$(TZ=Asia/Kolkata date +%d-%m-%Y)
+          HOLIDAY_FILE="holidays.txt"
+
+          # Skip scheduled runs on holidays
+          if [ "$EVENT_NAME" = "schedule" ] && [ -f "$HOLIDAY_FILE" ]; then
+            if grep -Fxq "$TODAY" "$HOLIDAY_FILE"; then
+              echo "::notice::Holiday ($TODAY) → skipping scheduled run"
+              echo "action=none" >> "$GITHUB_OUTPUT"
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+              echo "command=" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          
           ACTION="none"
           
           # 1. Script override
