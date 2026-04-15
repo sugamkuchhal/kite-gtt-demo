@@ -2,7 +2,7 @@ name: Unified Script Runner v2
 
 on:
   schedule:
-    - cron: "0,30 4-9 * * 1-5 "   # 09:30–15:15 IST every 30 mins, Mon–Fri
+    - cron: "0,30 4-9 * * 1-5"   # 09:30–15:15 IST every 30 mins, Mon–Fri
  #   - cron: "15,45 4-9 * * 1-5"   # 09:30–15:15 IST every 30 mins, Mon–Fri
     - cron: "30 12 * * 1-5"      # 18:00 IST (4:00 PM) Mon–Fri
     - cron: "0,30 3 * * *"         # 08:30,08:45,09:00 IST (all days)
