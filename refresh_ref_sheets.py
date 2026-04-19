@@ -2,6 +2,7 @@
 """Refresh ref_sheets.py from the Google Sheet Ref_Sheets tab."""
 
 from datetime import datetime, timezone
+import re
 
 from google_sheets_utils import get_gsheet_client
 
@@ -28,13 +29,23 @@ def build_module_content(rows):
 
     for row in rows:
         name = str(row.get("Workbook Name", "")).strip().upper()
-        typ = str(row.get("TYPE", "")).strip().upper()
-        sheet_id = str(row.get("URL", "")).strip()
-
-        if not name or not sheet_id:
+        if not name:
             continue
 
-        lines.append(f'    "{name}": {{"type": "{typ}", "sheet_id": "{sheet_id}"}},\n')
+        normalized = {}
+        for raw_key, raw_value in row.items():
+            key = re.sub(r"[^a-z0-9]+", "_", str(raw_key).strip().lower()).strip("_")
+            normalized[key] = str(raw_value).strip()
+
+        if "url" in normalized and "sheet_id" not in normalized:
+            normalized["sheet_id"] = normalized["url"]
+
+        # Keep TYPE consistently uppercase when present.
+        if "type" in normalized:
+            normalized["type"] = normalized["type"].upper()
+
+        kv = ", ".join(f'"{k}": "{v}"' for k, v in normalized.items())
+        lines.append(f'    "{name}": {{{kv}}},\n')
 
     lines.append("}\n")
     return "".join(lines)
