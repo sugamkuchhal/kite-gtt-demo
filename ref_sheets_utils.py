@@ -16,4 +16,8 @@ def resolve_ref_sheet(ref_name: str) -> dict:
 
 
 def resolve_ref_sheet_id(ref_name: str) -> str:
-    return resolve_ref_sheet(ref_name)["sheet_id"]
+    sheet = resolve_ref_sheet(ref_name)
+    sheet_id = sheet.get("sheet_id") or sheet.get("url")
+    if not sheet_id:
+        raise ValueError(f"Ref sheet '{ref_name}' is missing both 'sheet_id' and 'url'")
+    return sheet_id

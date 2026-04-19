@@ -2,9 +2,8 @@
 """Refresh ref_sheets.py from the Google Sheet Ref_Sheets tab."""
 
 from datetime import datetime, timezone
+import json
 import re
-
-from google_sheets_utils import get_gsheet_client
 
 SOURCE_SHEET_ID = "143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE"
 SOURCE_TAB_NAME = "Ref_Sheets"
@@ -12,6 +11,9 @@ TARGET_FILE = "ref_sheets.py"
 
 
 def fetch_ref_rows(sheet_id: str = SOURCE_SHEET_ID, tab_name: str = SOURCE_TAB_NAME):
+    # Imported lazily so build helpers can be imported/tested without gspread installed.
+    from google_sheets_utils import get_gsheet_client
+
     client = get_gsheet_client()
     ws = client.open_by_key(sheet_id).worksheet(tab_name)
     return ws.get_all_records()
@@ -44,8 +46,7 @@ def build_module_content(rows):
         if "type" in normalized:
             normalized["type"] = normalized["type"].upper()
 
-        kv = ", ".join(f'"{k}": "{v}"' for k, v in normalized.items())
-        lines.append(f'    "{name}": {{{kv}}},\n')
+        lines.append(f"    {json.dumps(name)}: {json.dumps(normalized, ensure_ascii=False)},\n")
 
     lines.append("}\n")
     return "".join(lines)
