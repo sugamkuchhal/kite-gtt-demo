@@ -4,6 +4,7 @@ import argparse
 
 # Use the Google Sheets helpers
 from google_sheets_utils import get_gsheet_client, read_rows_from_sheet
+from ref_sheets_utils import resolve_ref_sheet_id
 
 # --- Batch size: single source of truth from config.py ---
 try:
@@ -38,7 +39,9 @@ def fetch_gtt_instructions_batch(sheet, start_row):
     return raw_instructions, filtered_instructions
 
 
-def get_instructions_sheet(sheet_id=None, sheet_name=None):
+def get_instructions_sheet(sheet_id=None, sheet_name=None, ref_sheets=None):
+    if ref_sheets:
+        sheet_id = resolve_ref_sheet_id(ref_sheets)
     if sheet_id is None:
         sheet_id = getattr(config, "INSTRUCTION_SHEET_ID", None)
     if sheet_name is None:
