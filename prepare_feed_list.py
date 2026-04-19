@@ -4,6 +4,7 @@ import argparse
 import time
 
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_ref_sheet_id
 
 CREDS_PATH = str(get_creds_path())
 
@@ -39,13 +40,24 @@ def load_sheet(sheet_name):
     client = gspread.authorize(creds)
     return client.open(sheet_name)
 
-def prepare_feed_list(sheet_name, source_tab, dest_tab):
+def load_sheet_by_id(sheet_id):
+    scope = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/spreadsheets.readonly",
+        "https://www.googleapis.com/auth/drive",
+        "https://spreadsheets.google.com/feeds",
+    ]
+    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scope)
+    client = gspread.authorize(creds)
+    return client.open_by_key(sheet_id)
+
+def prepare_feed_list(sheet_name, source_tab, dest_tab, sheet_id=None):
     print("")
     print(f"⚙️  Preparing feed list from '{sheet_name}'")
     print("")
     print(f"⚙️  Preparing feed list from '{source_tab}' ➡️ '{dest_tab}'")
 
-    sheet = load_sheet(sheet_name)
+    sheet = load_sheet_by_id(sheet_id) if sheet_id else load_sheet(sheet_name)
     source_ws = sheet.worksheet(source_tab)
     dest_ws = sheet.worksheet(dest_tab)
 
@@ -152,23 +164,34 @@ def _post_checks_batch(spreadsheet):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Prepare Feed List from Google Sheet tabs.")
-    parser.add_argument("--sheet-name", required=True, help="Google Sheet file name")
+    parser.add_argument("--sheet-name", help="Google Sheet file name")
+    parser.add_argument("--ref-sheets", help="Reference sheet key (e.g. FEED)")
     parser.add_argument("--source-sheet", required=True, help="Source tab name")
     parser.add_argument("--dest-sheet", required=True, help="Destination tab name")
     args = parser.parse_args()
 
+    resolved_sheet_name = args.sheet_name
+    resolved_sheet_id = None
+    if args.ref_sheets:
+        resolved_sheet_id = resolve_ref_sheet_id(args.ref_sheets)
+
+    if not resolved_sheet_name and not resolved_sheet_id:
+        parser.error("Provide either --sheet-name or --ref-sheets")
+
     prepare_feed_list(
-        sheet_name=args.sheet_name,
+        sheet_name=resolved_sheet_name if resolved_sheet_name else args.ref_sheets,
         source_tab=args.source_sheet,
-        dest_tab=args.dest_sheet
+        dest_tab=args.dest_sheet,
+        sheet_id=resolved_sheet_id
     )
 
     # Resolve spreadsheet explicitly from the CLI sheet name
     try:
-        spreadsheet = load_sheet(args.sheet_name)
+        spreadsheet = load_sheet_by_id(resolved_sheet_id) if resolved_sheet_id else load_sheet(resolved_sheet_name)
     except Exception as e:
         spreadsheet = None
-        print(f"❌ Could not open spreadsheet '{args.sheet_name}' for post-checks: {e}")
+        target = resolved_sheet_name if resolved_sheet_name else resolved_sheet_id
+        print(f"❌ Could not open spreadsheet '{target}' for post-checks: {e}")
 
     if spreadsheet is None:
         print("❌ Could not resolve Spreadsheet object for post-checks. Skipping post-checks.")
