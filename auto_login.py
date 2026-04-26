@@ -17,6 +17,8 @@ from kiteconnect import KiteConnect
 from webdriver_manager.chrome import ChromeDriverManager
 
 from runtime_paths import get_access_token_path, get_api_key_path
+
+# NOTE: This script has no Google Sheets dependency by design.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 # Load secrets

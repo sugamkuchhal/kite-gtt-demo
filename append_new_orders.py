@@ -2,11 +2,12 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 
 CREDS_PATH = str(get_creds_path())
-SHEET_NAME = "SARAS Portfolio - Stocks"
-SRC_TAB = "LATEST_ORDERS"
-DEST_TAB = "NEW_ORDERS"
+ref_sheets = "PORTFOLIO"
+tab_name_src = "LATEST_ORDERS"
+tab_name_dest = "NEW_ORDERS"
 SRC_RANGE = "A:H"  # covers columns A to H
 
 def main():
@@ -19,10 +20,12 @@ def main():
     )
     gc = gspread.authorize(creds)
 
+    sheet_id = resolve_sheet_id(ref_sheets)
+
     # Open source and destination worksheet (same file)
-    sh = gc.open(SHEET_NAME)
-    ws_src = sh.worksheet(SRC_TAB)
-    ws_dest = sh.worksheet(DEST_TAB)
+    sh = gc.open_by_key(sheet_id)
+    ws_src = sh.worksheet(tab_name_src)
+    ws_dest = sh.worksheet(tab_name_dest)
 
     # Fetch all values from source (A:H)
     src_data = ws_src.get(SRC_RANGE)
@@ -35,7 +38,7 @@ def main():
 
     # Append all non-header rows to the destination in one call.
     ws_dest.append_rows(data_rows, value_input_option="USER_ENTERED")
-    print(f"✅ Appended {len(data_rows)} rows from {SRC_TAB} to {DEST_TAB}.")
+    print(f"✅ Appended {len(data_rows)} rows from {tab_name_src} to {tab_name_dest}.")
 
 if __name__ == "__main__":
     main()
