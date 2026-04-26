@@ -3,15 +3,13 @@ import logging
 import os
 import subprocess
 import sys
+
 from pathlib import Path
-
 from kiteconnect import KiteConnect
-
 from runtime_paths import get_access_token_path, get_api_key_path
 
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
-
+# NOTE: This script has no Google Sheets dependency by design.
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
 def _read_api_key():
     api_key_path = get_api_key_path()
@@ -22,14 +20,12 @@ def _read_api_key():
         raise ValueError(f"API key file is empty: {api_key_path}")
     return lines[0].strip()
 
-
 def _read_access_token():
     token_path = get_access_token_path()
     if not token_path.exists():
         return None
     token = token_path.read_text(encoding="utf-8").strip()
     return token or None
-
 
 def _token_is_valid(api_key, access_token):
     if not access_token:
@@ -43,7 +39,6 @@ def _token_is_valid(api_key, access_token):
         logging.warning("Token validation failed: %s", e)
         return False
 
-
 def _run_auto_login():
     result = subprocess.run([sys.executable, "auto_login.py"], check=False)
     if result.returncode != 0:
@@ -54,7 +49,6 @@ def _run_auto_login():
         logging.error("access_token.txt missing or empty after auto_login")
         return None
     return token
-
 
 def _update_github_secret(token):
     secret_name = os.getenv("GH_SECRET_NAME", "ACCESS_TOKEN")
@@ -80,7 +74,6 @@ def _update_github_secret(token):
     except subprocess.CalledProcessError as e:
         logging.error("Failed to update GitHub secret: %s", e.stderr.strip())
         return False
-
 
 def main():
     parser = argparse.ArgumentParser(description="Ensure Kite access token is valid.")
@@ -119,7 +112,6 @@ def main():
         return 1
 
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
