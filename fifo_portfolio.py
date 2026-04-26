@@ -4,10 +4,11 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 
 # --- CONFIG ---
-SPREADSHEET_NAME = "SARAS Portfolio - Stocks"
-WORKSHEET_NAME = "ALL_ORDERS"
+ref_sheets = "PORTFOLIO"
+tab_name = "ALL_ORDERS"
 CREDENTIALS_FILE = str(get_creds_path())
 
 # --- STEP 1: DOWNLOAD DATA FROM GOOGLE SHEETS ---
@@ -15,8 +16,9 @@ scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/au
 creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
 client = gspread.authorize(creds)
 
-sheet = client.open(SPREADSHEET_NAME)
-worksheet = sheet.worksheet(WORKSHEET_NAME)
+sheet_id = resolve_sheet_id(ref_sheets)
+sheet = client.open_by_key(sheet_id)
+worksheet = sheet.worksheet(tab_name)
 data = worksheet.get_all_records()
 
 df = pd.DataFrame(data)
