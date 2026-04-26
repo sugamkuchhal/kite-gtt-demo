@@ -2,10 +2,12 @@ import logging
 import subprocess
 from kite_session import get_kite
 from google_sheets_utils import get_gsheet_client
+from ref_sheets_utils import resolve_sheet_id
 
 # Google Sheet details
-PORTFOLIO_SHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
-ZERODHA_GTT_DATA = "ZERODHA_GTT_DATA"
+ref_sheets = "PORTFOLIO"
+sheet_id = resolve_sheet_id(ref_sheets)
+tab_name = "ZERODHA_GTT_DATA"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
@@ -40,7 +42,7 @@ def fetch_all_gtts():
             # logging.info(f"GTT Row: {row}")
         
         client = get_gsheet_client()
-        sheet = client.open_by_key(PORTFOLIO_SHEET_ID).worksheet(ZERODHA_GTT_DATA)
+        sheet = client.open_by_key(sheet_id).worksheet(tab_name)
         
         # Prepare headers and rows
         headers = list(formatted[0].keys())
@@ -50,7 +52,7 @@ def fetch_all_gtts():
         sheet.clear()
         sheet.update(values=values, range_name="A1")
         
-        logging.info(f"✅ {len(formatted)} GTTs written to sheet: {ZERODHA_GTT_DATA}")
+        logging.info(f"✅ {len(formatted)} GTTs written to sheet: {tab_name}")
         
     except Exception as e:
         logging.error(f"❌ Failed to fetch/write GTTs: {e}")
