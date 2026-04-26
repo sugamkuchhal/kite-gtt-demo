@@ -1,0 +1,105 @@
+{
+  "source": {
+    "spreadsheet_id": "143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE",
+    "tab_name": "Ref_Sheets",
+    "gid": 169959016,
+    "mode": "seed_fallback"
+  },
+  "schema": {
+    "columns": [
+      "ref-sheets",
+      "type",
+      "sheet-id",
+      "sheet-name"
+    ],
+    "header_row_index": 1
+  },
+  "updated_at_utc": "2026-04-26T04:54:23.739330+00:00",
+  "row_count": 14,
+  "rows": [
+    {
+      "ref-sheets": "CONSOLIDATED",
+      "type": "ALGO",
+      "sheet-id": "10mE4Pbdk0NqD_dKzg8T4imqrn-36rXJzLhZcFbjfREc",
+      "sheet-name": "SARAS D M B - Consolidated BreakOut with BOH"
+    },
+    {
+      "ref-sheets": "HUNDRED",
+      "type": "ALGO",
+      "sheet-id": "1LohCh021TNOdTIAJODwcu-lbeQMBPQNaSl4VI1jLaqY",
+      "sheet-name": "SARAS D M B - 100 DMA Stock Screener with BOH"
+    },
+    {
+      "ref-sheets": "KWK",
+      "type": "ALGO",
+      "sheet-id": "1Hfmx691NWmRVIKP4Qqel4JQ7lLk-4IQc22COSopr-gs",
+      "sheet-name": "SARAS W M B - KWK (Deep Bear Reversal)"
+    },
+    {
+      "ref-sheets": "PORTFOLIO",
+      "type": "ALGO",
+      "sheet-id": "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s",
+      "sheet-name": "SARAS Portfolio - Stocks"
+    },
+    {
+      "ref-sheets": "RTP",
+      "type": "ALGO",
+      "sheet-id": "1z5kRtLfDkBNWeA2hVDwxM-cdLpyYxa82rMcLHv3jCA8",
+      "sheet-name": "SARAS D G C - RTP (Reverse Trigger Point Salvaging)"
+    },
+    {
+      "ref-sheets": "SGST",
+      "type": "ALGO",
+      "sheet-id": "1Zg0kKrySRcEko8FhPeFU_Dcr7giCmzxdkpVqgx1lhFM",
+      "sheet-name": "SARAS D G B - SGST (Reversal Validation) With BOH"
+    },
+    {
+      "ref-sheets": "SUPER",
+      "type": "ALGO",
+      "sheet-id": "1H-VK8w_5TJl-sMPKnB5sY1sKFcs2oHEolIyTVwxSUgk",
+      "sheet-name": "SARAS D G B - Super BreakOut With BOH"
+    },
+    {
+      "ref-sheets": "TURTLE",
+      "type": "ALGO",
+      "sheet-id": "1mHnUq9BeEIr-PX2CDpfkkxHBxyKqXg6rdDhcG4CqqsE",
+      "sheet-name": "SARAS D G B - Turtle Trading with BOH"
+    },
+    {
+      "ref-sheets": "BANK",
+      "type": "BASE",
+      "sheet-id": "1TX4Q8YG0-d2_L1YOhvb9OYDgklvHj3eFK76JN7Pdavg",
+      "sheet-name": "Algo Master Data Bank"
+    },
+    {
+      "ref-sheets": "CALCULATOR",
+      "type": "BASE",
+      "sheet-id": "1IZJYejcWZN72f_3Fm1L2IHgbjVxOthTfqwnsnynCcXk",
+      "sheet-name": "Algo Master Data Calculator"
+    },
+    {
+      "ref-sheets": "FEED",
+      "type": "BASE",
+      "sheet-id": "1ayv2CiY078ZaZHVl2LIQNNcedEuOC56bR1fL6JMBQaM",
+      "sheet-name": "Algo Master Feed Sheet"
+    },
+    {
+      "ref-sheets": "SECTOR",
+      "type": "BASE",
+      "sheet-id": "1GUJeD57cqkx0FXK2riq0zBc02KfP3jfFY6bzlid16a0",
+      "sheet-name": "Algo Master Sector Sheet"
+    },
+    {
+      "ref-sheets": "SEED",
+      "type": "BASE",
+      "sheet-id": "1Vsysm1iHaogaj3gBI8eM-uMa2-ZNGI4WU1QEpM6XF4Y",
+      "sheet-name": "Algo Master Seed Sheet"
+    },
+    {
+      "ref-sheets": "TICKER",
+      "type": "BASE",
+      "sheet-id": "143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE",
+      "sheet-name": "Algo Master Ticker Sheet"
+    }
+  ]
+}
