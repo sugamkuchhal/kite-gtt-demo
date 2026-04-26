@@ -2,6 +2,7 @@
 import logging
 import argparse
 from google_sheets_utils import get_gsheet_client, read_rows_from_sheet
+from ref_sheets_utils import resolve_sheet_id
 
 # --- Batch size: single source of truth from config.py ---
 try:
@@ -21,6 +22,9 @@ except Exception as e:
 # --- End batch size setup ---
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
+
+ref_sheets = "PORTFOLIO"
+tab_name = "GTT_DATA"
 
 def fetch_existing_gtts_batch(sheet, start_row):
     """
@@ -46,9 +50,9 @@ def fetch_existing_gtts_batch(sheet, start_row):
 
 def get_tracking_sheet(sheet_id=None, sheet_name=None):
     if sheet_id is None:
-        sheet_id = getattr(config, "DATA_MANAGEMENT_SHEET_ID", None)
+        sheet_id = resolve_sheet_id(ref_sheets)
     if sheet_name is None:
-        sheet_name = getattr(config, "DATA_MANAGEMENT_SHEET_NAME", None)
+        sheet_name = tab_name
 
     if not sheet_id or not sheet_name:
         raise ValueError("sheet_id and sheet_name must be provided either as args or via config")
@@ -74,12 +78,8 @@ if __name__ == "__main__":
     # This script is intentionally non-interactive (no CLI args).
     start_row = 2
 
-    try:
-        sheet_id = config.DATA_MANAGEMENT_SHEET_ID
-        sheet_name = config.DATA_MANAGEMENT_SHEET_NAME
-    except Exception:
-        logging.error("DATA_MANAGEMENT_SHEET_ID and DATA_MANAGEMENT_SHEET_NAME must be defined in config.py")
-        raise SystemExit(1)
+    sheet_id = resolve_sheet_id(ref_sheets)
+    sheet_name = tab_name
 
     logging.info(f"Using sheet_id={sheet_id}, sheet_name={sheet_name}, start_row={start_row}, batch_size={BATCH_SIZE}")
 
