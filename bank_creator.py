@@ -5,24 +5,30 @@ import logging
 from datetime import datetime
 
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Google credentials
 CREDENTIALS_FILE = str(get_creds_path())
-SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1TX4Q8YG0-d2_L1YOhvb9OYDgklvHj3eFK76JN7Pdavg/edit?gid=187190800#gid=187190800"
+ref_sheets = "BANK"
+tab_name_symbol = "SYMBOL"
+tab_name_calc = "CALC"
+tab_name_inp = "INP"
+tab_name_bank_creator = "BANK_CREATOR"
 
 # Authorize
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
 creds = Credentials.from_service_account_file(CREDENTIALS_FILE, scopes=scope)
 client = gspread.authorize(creds)
-spreadsheet = client.open_by_url(SPREADSHEET_URL)
+sheet_id = resolve_sheet_id(ref_sheets)
+spreadsheet = client.open_by_key(sheet_id)
 
 # Sheets
-symbol_sheet = spreadsheet.worksheet("SYMBOL")
-calc_sheet = spreadsheet.worksheet("CALC")
-inp_sheet = spreadsheet.worksheet("INP")
-bank_sheet = spreadsheet.worksheet("BANK_CREATOR")
+symbol_sheet = spreadsheet.worksheet(tab_name_symbol)
+calc_sheet = spreadsheet.worksheet(tab_name_calc)
+inp_sheet = spreadsheet.worksheet(tab_name_inp)
+bank_sheet = spreadsheet.worksheet(tab_name_bank_creator)
 
 # Get symbols
 symbols = symbol_sheet.col_values(1)[1:]  # Skip header (A2:A)
@@ -89,10 +95,10 @@ for i, symbol in enumerate(symbols):
     if needed_rows > bank_sheet.row_count:
         rows_to_add = needed_rows - bank_sheet.row_count
         bank_sheet.add_rows(rows_to_add)
-        logging.info(f"📐 Added {rows_to_add} rows to BANK_CREATOR to fit incoming data.")
+        logging.info(f"📐 Added {rows_to_add} rows to {tab_name_bank_creator} to fit incoming data.")
 
     # Update
     bank_sheet.update(values=filtered_data, range_name=f"A{start_row}")
-    logging.info(f"📦 Appended {len(filtered_data)} cleaned rows to BANK_CREATOR for {symbol}")
+    logging.info(f"📦 Appended {len(filtered_data)} cleaned rows to {tab_name_bank_creator} for {symbol}")
 
 logging.info("🎉✅ All symbols processed successfully.")
