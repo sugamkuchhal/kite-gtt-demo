@@ -1,11 +1,11 @@
 # config.py
+from ref_sheets_utils import resolve_sheet_id
 
 # Sheet IDs and names
-INSTRUCTION_SHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
-INSTRUCTION_SHEET_NAME = "GTT_INSTRUCTIONS"  # Instruction sheet tab name
-
-DATA_MANAGEMENT_SHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
-DATA_MANAGEMENT_SHEET_NAME = "GTT_DATA"  # Data management sheet tab name
+ref_sheets = "PORTFOLIO"
+sheet_id = resolve_sheet_id(ref_sheets)
+tab_name_instruction = "GTT_INSTRUCTIONS"  # Instruction sheet tab name
+tab_name_data_management = "GTT_DATA"  # Data management sheet tab name
 
 BATCH_SIZE = 1000
 
