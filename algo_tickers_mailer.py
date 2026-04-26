@@ -13,14 +13,15 @@ import json
 import os
 
 from runtime_paths import get_creds_path, get_smtp_token_path
+from ref_sheets_utils import resolve_sheet_id
 
 SMTP_TOKEN_FILE = str(get_smtp_token_path())
 
 # ==========================
 # Config (constants)
 # ==========================
-SHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
-TAB_NAME = "Action_Mailing_List"
+ref_sheets = "PORTFOLIO"
+tab_name = "Action_Mailing_List"
 SERVICE_CREDS = str(get_creds_path())
 
 
@@ -143,7 +144,8 @@ def main():
     args = parse_args()
     recipients = [e.strip() for e in args.emails.split(",") if e.strip()]
 
-    rows = read_sheet(SHEET_ID, TAB_NAME, SERVICE_CREDS)
+    sheet_id = resolve_sheet_id(ref_sheets)
+    rows = read_sheet(sheet_id, tab_name, SERVICE_CREDS)
     header, data = rows[0], rows[1:]
 
     # Columns: A,B,D,O
@@ -161,7 +163,7 @@ def main():
     logging.info("Rows included: %d", len(filtered))
 
     html_body = (
-        f'<p>ALGO tickers requiring attention (sheet: <b>{TAB_NAME}</b>, date: {subject_date})</p>'
+        f'<p>ALGO tickers requiring attention (sheet: <b>{tab_name}</b>, date: {subject_date})</p>'
         + format_html_table(filtered)
     )
 
