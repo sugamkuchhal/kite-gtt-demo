@@ -3,16 +3,18 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 
 CREDS_PATH = str(get_creds_path())
 
-def get_ws(sheet_name, tab_name):
+def get_ws(ref_sheets, tab_name):
     creds = Credentials.from_service_account_file(
         CREDS_PATH,
         scopes=["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     )
     gc = gspread.authorize(creds)
-    sh = gc.open(sheet_name)
+    sheet_id = resolve_sheet_id(ref_sheets)
+    sh = gc.open_by_key(sheet_id)
     ws = sh.worksheet(tab_name)
     return sh, ws
 
@@ -39,18 +41,27 @@ def check_gt_threshold(sheet_title, ws, cell, threshold=0.995):
 
 # ==== Threshold Check Example Usage: ====
 
-sh4_src, ws4_src = get_ws("SARAS W M B - KWK (Deep Bear Reversal)", "Friday_Identifier")
+ref_sheets_kwk = "KWK"
+tab_name_kwk = "Friday_Identifier"
+sh4_src, ws4_src = get_ws(ref_sheets_kwk, tab_name_kwk)
 check_gt_threshold(sh4_src.title, ws4_src, "F1") 
 
-sh5_src, ws5_src = get_ws("SARAS Portfolio - Stocks", "CREDIT_CANDIDATES")
+ref_sheets_portfolio = "PORTFOLIO"
+tab_name_portfolio = "CREDIT_CANDIDATES"
+sh5_src, ws5_src = get_ws(ref_sheets_portfolio, tab_name_portfolio)
 check_gt_threshold(sh5_src.title, ws5_src, "K1") 
 
-sh6_src, ws6_src = get_ws("SARAS D G C - RTP (Reverse Trigger Point Salvaging)", "DATE_Identifier")
+ref_sheets_rtp = "RTP"
+tab_name_rtp = "DATE_Identifier"
+sh6_src, ws6_src = get_ws(ref_sheets_rtp, tab_name_rtp)
 check_gt_threshold(sh6_src.title, ws6_src, "F1") 
 
-sh7_src, ws7_src = get_ws("SARAS D M B - 100 DMA Stock Screener with BOH", "OPEN_LIST")
+ref_sheets_hundred = "HUNDRED"
+tab_name_hundred = "OPEN_LIST"
+sh7_src, ws7_src = get_ws(ref_sheets_hundred, tab_name_hundred)
 check_gt_threshold(sh7_src.title, ws7_src, "F1") 
 
-sh8_src, ws8_src = get_ws("SARAS D M B - Consolidated BreakOut with BOH", "OPEN_LIST")
+ref_sheets_consolidated = "CONSOLIDATED"
+tab_name_consolidated = "OPEN_LIST"
+sh8_src, ws8_src = get_ws(ref_sheets_consolidated, tab_name_consolidated)
 check_gt_threshold(sh8_src.title, ws8_src, "E1") 
-
