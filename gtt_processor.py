@@ -502,8 +502,28 @@ def process_gtt_batch(kite, start_row, instruction_sheet, data_sheet):
             trigger_price = price_float
             limit_price = price_float
                 
-            last_price_float = float(instr.get("LIVE PRICE", 0) or 0)
-
+            sheet_price = _parse_number_safe(instr.get("LIVE PRICE"))
+            
+            try:
+                ltp_data = kite.ltp(f"{exchange}:{symbol}")
+                last_price_float = ltp_data[f"{exchange}:{symbol}"]["last_price"]
+            
+                # optional sanity check vs sheet
+                if sheet_price is not None:
+                    diff = abs(last_price_float - sheet_price) / last_price_float
+                    if diff > 0.02:  # >2% deviation
+                        logger.warning(f"Sheet LTP deviates >2% for {symbol}: sheet={sheet_price}, live={last_price_float}")
+            
+            except Exception as e:
+                # fallback to sheet
+                if sheet_price is None:
+                    update_status(status_manager, row_num, "❌ no valid LTP (live + sheet failed)")
+                    failed_rows.append({"row_number": row_num, "reason": "No valid LTP"})
+                    continue
+            
+                last_price_float = sheet_price
+                logger.warning(f"Using sheet LTP for {symbol}: {sheet_price} (reason: {e})")
+            
             instr_match_obj = {
                 "TICKER": raw_ticker,
                 "TYPE": raw_type,
