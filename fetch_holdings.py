@@ -7,10 +7,13 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 
 CREDS_PATH = str(get_creds_path())
-SHEET_NAME = "SARAS Portfolio - Stocks"
-TAB_NAME = "ZERODHA_PORTFOLIO"
+ref_sheets = "PORTFOLIO"
+sheet_id = resolve_sheet_id(ref_sheets)
+tab_name_holdings = "ZERODHA_PORTFOLIO"
+tab_name_portfolio = "Portfolio"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
@@ -57,22 +60,20 @@ def write_to_gsheet(holdings):
 
     # Connect to Google Sheet
     gc = get_gsheet_client()
-    sh = gc.open(SHEET_NAME)
-    ws = sh.worksheet(TAB_NAME)
+    sh = gc.open_by_key(sheet_id)
+    ws = sh.worksheet(tab_name_holdings)
 
     # Clear existing content and update with new data
     ws.clear()
     ws.update(values=data, range_name='A1')
-    logging.info(f"✅ Holdings written to {SHEET_NAME} [{TAB_NAME}]")
+    logging.info(f"✅ Holdings written to {ref_sheets} [{tab_name_holdings}]")
 
 def check_portfolio_discrepancy():
-    SHEET_NAME = "SARAS Portfolio - Stocks"
-    TAB_NAME = "Portfolio"
     CELL = "U1"
     CELL_CHECK = "V1"
     gc = get_gsheet_client()
-    sh = gc.open(SHEET_NAME)
-    ws = sh.worksheet(TAB_NAME)
+    sh = gc.open_by_key(sheet_id)
+    ws = sh.worksheet(tab_name_portfolio)
     try:
         cell_value = ws.acell(CELL).value
         cell_check_value = ws.acell(CELL_CHECK).value

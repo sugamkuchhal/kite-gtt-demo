@@ -13,20 +13,23 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 
 # ---------------- CONFIG ----------------
 CREDS_PATH = str(get_creds_path())
 
-# Source spreadsheet URL (ETL destination that contains BANK_INC and BANK_NEW)
-SOURCE_SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1TX4Q8YG0-d2_L1YOhvb9OYDgklvHj3eFK76JN7Pdavg"
+# Source spreadsheet resolver key (contains BANK_INC and BANK_NEW)
+ref_sheets_src = "BANK"
+sheet_id_src = resolve_sheet_id(ref_sheets_src)
 
-# Destination spreadsheet name (as in existing data_teleporter config)
-DEST_SPREADSHEET_URL = "https://docs.google.com/spreadsheets/d/1IZJYejcWZN72f_3Fm1L2IHgbjVxOthTfqwnsnynCcXk"
+# Destination spreadsheet resolver key
+ref_sheets_dest = "CALCULATOR"
+sheet_id_dest = resolve_sheet_id(ref_sheets_dest)
 
 # Sheet/tab names (as we discussed)
-INC_SHEET = "BANK_INC"
-NEW_SHEET = "BANK_NEW"
-FINAL_SHEET = "BANK_FINAL"
+tab_name_inc = "BANK_INC"
+tab_name_new = "BANK_NEW"
+tab_name_final = "BANK_FINAL"
 
 # Tuning
 DEFAULT_PAGE_SIZE = 10000
@@ -123,9 +126,9 @@ def rows_equal(a: List[Any], b: List[Any]) -> bool:
     return True
 
 # ----------------- domain functions -----------------
-def read_inc_keys(client: gspread.client.Client, source_spreadsheet_url: str, inc_sheet_name: str,
+def read_inc_keys(client: gspread.client.Client, source_sheet_id: str, inc_sheet_name: str,
                   col_range: str = "A:B") -> List[Tuple[str,str]]:
-    ss = client.open_by_url(source_spreadsheet_url)
+    ss = client.open_by_key(source_sheet_id)
     ws = ss.worksheet(inc_sheet_name)
     vals = ws.get(col_range) or []
     if not vals:
@@ -142,9 +145,9 @@ def read_inc_keys(client: gspread.client.Client, source_spreadsheet_url: str, in
             keys.append(k)
     return keys
 
-def find_keys_in_sheet_paged(client: gspread.client.Client, spreadsheet_url: str, sheet_name: str,
+def find_keys_in_sheet_paged(client: gspread.client.Client, sheet_id: str, sheet_name: str,
                              keys_set: List[Tuple[str,str]], page_size: int = DEFAULT_PAGE_SIZE) -> Dict[Tuple[str,str], List[int]]:
-    ss = client.open_by_url(spreadsheet_url)
+    ss = client.open_by_key(sheet_id)
     ws = ss.worksheet(sheet_name)
     total_rows = ws.row_count
     keys_needed = set(keys_set)
@@ -171,11 +174,11 @@ def find_keys_in_sheet_paged(client: gspread.client.Client, spreadsheet_url: str
         start = end + 1
     return found
 
-def read_rows_by_indices(client: gspread.client.Client, spreadsheet_url: str, sheet_name: str,
+def read_rows_by_indices(client: gspread.client.Client, sheet_id: str, sheet_name: str,
                          row_indices: List[int], last_col: str = "G") -> Dict[int, List[Any]]:
     if not row_indices:
         return {}
-    ss = client.open_by_url(spreadsheet_url)
+    ss = client.open_by_key(sheet_id)
     ws = ss.worksheet(sheet_name)
     idxs_sorted = sorted(set(row_indices))
     groups = _group_contiguous(idxs_sorted)
@@ -187,10 +190,10 @@ def read_rows_by_indices(client: gspread.client.Client, spreadsheet_url: str, sh
             res[start + offset] = row
     return res
 
-def delete_rows_descending(client: gspread.client.Client, spreadsheet_url: str, sheet_name: str, row_indices: List[int]):
+def delete_rows_descending(client: gspread.client.Client, sheet_id: str, sheet_name: str, row_indices: List[int]):
     if not row_indices:
         return
-    ss = client.open_by_url(spreadsheet_url)
+    ss = client.open_by_key(sheet_id)
     ws = ss.worksheet(sheet_name)
     unique_desc = sorted(set(row_indices), reverse=True)
     for r in unique_desc:
@@ -200,11 +203,11 @@ def delete_rows_descending(client: gspread.client.Client, spreadsheet_url: str, 
         except Exception as e:
             log(f"[WARN] delete row {r} failed: {e}")
 
-def batch_overwrite_rows(client: gspread.client.Client, spreadsheet_url: str, sheet_name: str,
+def batch_overwrite_rows(client: gspread.client.Client, sheet_id: str, sheet_name: str,
                          updates: List[Tuple[int, List[Any]]], batch_size: int = DEFAULT_BATCH_UPDATE_SIZE, last_col: str = "G"):
     if not updates:
         return
-    ss = client.open_by_url(spreadsheet_url)
+    ss = client.open_by_key(sheet_id)
     ws = ss.worksheet(sheet_name)
     updates_sorted = sorted(updates, key=lambda x: x[0])
     groups = []
@@ -238,11 +241,11 @@ def batch_overwrite_rows(client: gspread.client.Client, spreadsheet_url: str, sh
             s_idx = e_idx
             time.sleep(BATCH_SLEEP)
 
-def batch_append_rows(client: gspread.client.Client, spreadsheet_url: str, sheet_name: str,
+def batch_append_rows(client: gspread.client.Client, sheet_id: str, sheet_name: str,
                       rows_to_append: List[List[Any]], append_chunk: int = DEFAULT_APPEND_CHUNK):
     if not rows_to_append:
         return
-    ss = client.open_by_url(spreadsheet_url)
+    ss = client.open_by_key(sheet_id)
     ws = ss.worksheet(sheet_name)
     i = 0
     total = len(rows_to_append)
@@ -256,11 +259,11 @@ def batch_append_rows(client: gspread.client.Client, spreadsheet_url: str, sheet
         i += append_chunk
         time.sleep(BATCH_SLEEP)
 
-def copy_formulas_hi_where_blank(client: gspread.client.Client, spreadsheet_url: str, sheet_name: str,
+def copy_formulas_hi_where_blank(client: gspread.client.Client, sheet_id: str, sheet_name: str,
                                  target_ranges: List[Tuple[int,int]]):
     if not target_ranges:
         return
-    ss = client.open_by_url(spreadsheet_url)
+    ss = client.open_by_key(sheet_id)
     ws = ss.worksheet(sheet_name)
     try:
         template = ws.get("H2:I2", value_render_option="FORMULA") or [["",""]]
@@ -296,17 +299,17 @@ def copy_formulas_hi_where_blank(client: gspread.client.Client, spreadsheet_url:
 
 # ----------------- orchestrator -----------------
 def replicate_bank_new_to_dest(creds_path: str,
-                               source_spreadsheet_url: str,
-                               dest_spreadsheet_url: str,
-                               inc_sheet_name: str = INC_SHEET,
-                               new_sheet_name: str = NEW_SHEET,
-                               final_sheet_name: str = FINAL_SHEET,
+                               source_sheet_id: str,
+                               dest_sheet_id: str,
+                               inc_sheet_name: str = tab_name_inc,
+                               new_sheet_name: str = tab_name_new,
+                               final_sheet_name: str = tab_name_final,
                                page_size: int = DEFAULT_PAGE_SIZE,
                                batch_update_size: int = DEFAULT_BATCH_UPDATE_SIZE,
                                append_chunk: int = DEFAULT_APPEND_CHUNK):
     client = authorize(creds_path)
     # 1) read inc keys
-    inc_keys = read_inc_keys(client, source_spreadsheet_url, inc_sheet_name, col_range="A:B")
+    inc_keys = read_inc_keys(client, source_sheet_id, inc_sheet_name, col_range="A:B")
     if not inc_keys:
         log("[INFO] no keys in BANK_INC; nothing to do.")
         return
@@ -314,7 +317,7 @@ def replicate_bank_new_to_dest(creds_path: str,
 
     # 2) locate keys in source NEW
     log("[INFO] locating keys in source BANK_NEW...")
-    src_found = find_keys_in_sheet_paged(client, source_spreadsheet_url, new_sheet_name, inc_keys, page_size=page_size)
+    src_found = find_keys_in_sheet_paged(client, source_sheet_id, new_sheet_name, inc_keys, page_size=page_size)
     missing = [k for k in inc_keys if k not in src_found]
     if missing:
         log(f"[WARN] {len(missing)} keys from BANK_INC not found in BANK_NEW; skipping those.")
@@ -332,7 +335,7 @@ def replicate_bank_new_to_dest(creds_path: str,
 
     # 3) read source full rows
     log(f"[INFO] reading {len(src_indices)} source rows from BANK_NEW ...")
-    src_rows_map = read_rows_by_indices(client, source_spreadsheet_url, new_sheet_name, src_indices, last_col="G")
+    src_rows_map = read_rows_by_indices(client, source_sheet_id, new_sheet_name, src_indices, last_col="G")
     payload_map = {}
     for k in process_keys:
         idx = key_to_src_index[k]
@@ -348,7 +351,7 @@ def replicate_bank_new_to_dest(creds_path: str,
 
     # 4) locate keys in destination
     log("[INFO] locating keys in destination BANK_FINAL ...")
-    dest_found = find_keys_in_sheet_paged(client, dest_spreadsheet_url, final_sheet_name, list(payload_map.keys()), page_size=page_size)
+    dest_found = find_keys_in_sheet_paged(client, dest_sheet_id, final_sheet_name, list(payload_map.keys()), page_size=page_size)
 
     to_overwrite = []
     to_append = []
@@ -375,10 +378,10 @@ def replicate_bank_new_to_dest(creds_path: str,
     # 5) delete duplicates descending
     if duplicates_to_delete:
         log("[ACTION] deleting duplicate extra rows (descending indices)...")
-        delete_rows_descending(client, dest_spreadsheet_url, final_sheet_name, duplicates_to_delete)
+        delete_rows_descending(client, dest_sheet_id, final_sheet_name, duplicates_to_delete)
         # re-locate canonical indices after deletes
         log("[INFO] re-locating canonical indices after deletes...")
-        dest_found_after = find_keys_in_sheet_paged(client, dest_spreadsheet_url, final_sheet_name, list(payload_map.keys()), page_size=page_size)
+        dest_found_after = find_keys_in_sheet_paged(client, dest_sheet_id, final_sheet_name, list(payload_map.keys()), page_size=page_size)
         new_overwrite = []
         overwrite_ranges_for_formula = []
         for key, src_row in payload_map.items():
@@ -391,7 +394,7 @@ def replicate_bank_new_to_dest(creds_path: str,
         log(f"[INFO] confirmed {len(to_overwrite)} overwrite targets after cleanup.")
 
     # 6) ensure rows for appends
-    ss_dest = client.open_by_url(dest_spreadsheet_url)
+    ss_dest = client.open_by_key(dest_sheet_id)
     ws_dest = ss_dest.worksheet(final_sheet_name)
     dest_row_count = ws_dest.row_count
     projected = dest_row_count + len(to_append) + ROW_BUFFER
@@ -400,13 +403,13 @@ def replicate_bank_new_to_dest(creds_path: str,
     # 7) perform overwrites
     if to_overwrite:
         log(f"[ACTION] performing {len(to_overwrite)} overwrites...")
-        batch_overwrite_rows(client, dest_spreadsheet_url, final_sheet_name, to_overwrite, batch_size=batch_update_size, last_col="G")
+        batch_overwrite_rows(client, dest_sheet_id, final_sheet_name, to_overwrite, batch_size=batch_update_size, last_col="G")
 
     # 8) perform appends (and capture appended ranges for formula copy)
     if to_append:
         log(f"[ACTION] appending {len(to_append)} rows...")
         # Do chunked append; after each chunk attempt to determine appended range
-        ssd = client.open_by_url(dest_spreadsheet_url)
+        ssd = client.open_by_key(dest_sheet_id)
         wsd = ssd.worksheet(final_sheet_name)
         i = 0
         while i < len(to_append):
@@ -481,7 +484,7 @@ def replicate_bank_new_to_dest(creds_path: str,
                 cs, ce = s, e
         merged.append((cs, ce))
         log(f"[ACTION] re-applying H:I formulas into {len(merged)} ranges (only where blank)...")
-        copy_formulas_hi_where_blank(client, dest_spreadsheet_url, final_sheet_name, merged)
+        copy_formulas_hi_where_blank(client, dest_sheet_id, final_sheet_name, merged)
 
     # 10) sample verification
     sample_keys = list(payload_map.keys())
@@ -492,14 +495,14 @@ def replicate_bank_new_to_dest(creds_path: str,
         sample = []
     mismatches = 0
     for k in sample:
-        dest_map_now = find_keys_in_sheet_paged(client, dest_spreadsheet_url, final_sheet_name, [k], page_size=page_size)
+        dest_map_now = find_keys_in_sheet_paged(client, dest_sheet_id, final_sheet_name, [k], page_size=page_size)
         dest_idxs_now = dest_map_now.get(k, [])
         if not dest_idxs_now:
             log(f"[ERROR] verification: key {k} missing in destination after write.")
             mismatches += 1
             continue
         canonical = min(dest_idxs_now)
-        ss = client.open_by_url(dest_spreadsheet_url)
+        ss = client.open_by_key(dest_sheet_id)
         ws = ss.worksheet(final_sheet_name)
         rng = f"A{canonical}:G{canonical}"
         dest_row = (ws.get(rng) or [[]])[0] if (ws.get(rng) or [[]]) else []
@@ -520,11 +523,11 @@ if __name__ == "__main__":
     try:
         replicate_bank_new_to_dest(
             creds_path=CREDS_PATH,
-            source_spreadsheet_url=SOURCE_SPREADSHEET_URL,
-            dest_spreadsheet_url=DEST_SPREADSHEET_URL,
-            inc_sheet_name=INC_SHEET,
-            new_sheet_name=NEW_SHEET,
-            final_sheet_name=FINAL_SHEET,
+            source_sheet_id=sheet_id_src,
+            dest_sheet_id=sheet_id_dest,
+            inc_sheet_name=tab_name_inc,
+            new_sheet_name=tab_name_new,
+            final_sheet_name=tab_name_final,
             page_size=DEFAULT_PAGE_SIZE,
             batch_update_size=DEFAULT_BATCH_UPDATE_SIZE,
             append_chunk=DEFAULT_APPEND_CHUNK

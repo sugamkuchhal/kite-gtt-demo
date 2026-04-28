@@ -4,6 +4,7 @@ import argparse
 
 # Use the Google Sheets helpers
 from google_sheets_utils import get_gsheet_client, read_rows_from_sheet
+from ref_sheets_utils import resolve_sheet_id
 
 # --- Batch size: single source of truth from config.py ---
 try:
@@ -24,6 +25,9 @@ except Exception as e:
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
+ref_sheets = "PORTFOLIO"
+tab_name = "GTT_INSTRUCTIONS"
+
 def fetch_gtt_instructions_batch(sheet, start_row):
     """
     Reads up to BATCH_SIZE raw rows starting from `start_row` (1-based).
@@ -38,11 +42,16 @@ def fetch_gtt_instructions_batch(sheet, start_row):
     return raw_instructions, filtered_instructions
 
 
-def get_instructions_sheet(sheet_id=None, sheet_name=None):
-    if sheet_id is None:
-        sheet_id = getattr(config, "INSTRUCTION_SHEET_ID", None)
+def get_instructions_sheet(ref_sheets_value=None, sheet_name=None, sheet_id=None):
+    # Backward-compatible alias: legacy callers may still pass sheet_id=...
+    if ref_sheets_value is None and sheet_id is not None:
+        ref_sheets_value = sheet_id
+    if ref_sheets_value is None:
+        ref_sheets_value = ref_sheets
     if sheet_name is None:
-        sheet_name = getattr(config, "INSTRUCTION_SHEET_NAME", None)
+        sheet_name = tab_name
+
+    sheet_id = resolve_sheet_id(ref_sheets_value)
 
     if not sheet_id or not sheet_name:
         raise ValueError("Please provide sheet_id and sheet_name (or set them in config)")
@@ -68,21 +77,22 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    sheet_id = _get_from_args_or_config(args.sheet_id, config, "INSTRUCTION_SHEET_ID")
-    sheet_name = _get_from_args_or_config(args.sheet_name, config, "INSTRUCTION_SHEET_NAME")
+    ref_sheets_value = _get_from_args_or_config(args.sheet_id, config, "ref_sheets", default=ref_sheets)
+    sheet_name = _get_from_args_or_config(args.sheet_name, config, "tab_name_instruction", default=tab_name)
     start_row = args.start_row if args.start_row and args.start_row > 0 else 2
 
     missing = []
-    if not sheet_id:
-        missing.append("sheet-id (or config.INSTRUCTION_SHEET_ID)")
+    if not ref_sheets_value:
+        missing.append("sheet-id (resolver key) or config.ref_sheets")
     if not sheet_name:
-        missing.append("sheet-name (or config.INSTRUCTION_SHEET_NAME)")
+        missing.append("sheet-name (or config.tab_name_instruction)")
     if missing:
         parser.error("Missing required parameters: " + ", ".join(missing))
 
-    logging.info(f"Using sheet_id={sheet_id}, sheet_name={sheet_name}, start_row={start_row}, batch_size={BATCH_SIZE}")
+    sheet_id = resolve_sheet_id(ref_sheets_value)
+    logging.info(f"Using ref_sheets={ref_sheets_value}, sheet_id={sheet_id}, sheet_name={sheet_name}, start_row={start_row}, batch_size={BATCH_SIZE}")
 
-    sheet = get_instructions_sheet(sheet_id, sheet_name)
+    sheet = get_instructions_sheet(ref_sheets_value, sheet_name)
 
     all_instructions = []
     cur_row = start_row
