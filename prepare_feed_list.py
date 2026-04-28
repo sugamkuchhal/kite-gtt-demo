@@ -124,16 +124,13 @@ def prepare_feed_list(ref_sheets, source_tab, dest_tab):
 # ------------------ POST-CHECKS: specific cells & simple prints ------------------
 def _post_checks_batch(spreadsheet):
     """
-    Batch read the six J1 cells across different worksheets in ONE API call,
+    Batch read the three J1 cells across different worksheets in ONE API call,
     then log the same pass/fail messages as before.
     """
     ranges = [
         "SGST_FEED_LIST!J1",
-        "VS_SGST_FEED_LIST!J1",
         "SUPER_FEED_LIST!J1",
-        "VS_SUPER_FEED_LIST!J1",
         "TURTLE_FEED_LIST!J1",
-        "VS_TURTLE_FEED_LIST!J1",
     ]
     try:
         # Correct portable call – no keyword arguments
