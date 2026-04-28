@@ -17,7 +17,8 @@ required_packages = [
     'gspread',
     'google-auth',
     'google-auth-oauthlib',
-    'google-auth-httplib2'
+    'google-auth-httplib2',
+    'kiteconnect'
 ]
 
 def check_package(package_name):
@@ -40,6 +41,10 @@ def check_package(package_name):
             import google_auth_httplib2
             version = getattr(google_auth_httplib2, '__version__', 'Unknown')
             import_name = 'google_auth_httplib2'
+        elif package_name == 'kiteconnect':
+            import kiteconnect
+            version = getattr(kiteconnect, '__version__', 'Unknown')
+            import_name = 'kiteconnect'
         else:
             # Standard import
             module = __import__(package_name)
@@ -119,7 +124,20 @@ def main():
                     print(f"\n🎉 All packages installed successfully!")
                     
         except EOFError:
-            print(f"\n\n⚠️  Non-interactive shell detected; skipping auto-install prompt.")
+            print(f"\n\n🤖 Non-interactive shell detected; auto-installing missing packages...")
+            failed_installs = []
+            for package in missing_packages:
+                if install_package(package):
+                    print(f"✅ Successfully installed {package}")
+                else:
+                    print(f"❌ Failed to install {package}")
+                    failed_installs.append(package)
+
+            if failed_installs:
+                print(f"\n⚠️  Failed to install: {', '.join(failed_installs)}")
+                print(f"   Try installing manually with:")
+                for package in failed_installs:
+                    print(f"   pip install {package}")
         except KeyboardInterrupt:
             print(f"\n\n👋 Installation cancelled by user")
     
@@ -135,7 +153,8 @@ def main():
         ('requests', 'requests'),
         ('bs4', 'BeautifulSoup'),
         ('gspread', 'gspread'),
-        ('google.auth', 'google.auth')
+        ('google.auth', 'google.auth'),
+        ('kiteconnect', 'kiteconnect')
     ]
     
     all_imports_work = True
@@ -153,6 +172,8 @@ def main():
                 import gspread
             elif alias == 'google.auth':
                 import google.auth
+            elif alias == 'kiteconnect':
+                import kiteconnect
             
             print(f"✅ {module} import successful")
         except ImportError as e:
@@ -161,8 +182,10 @@ def main():
     
     if all_imports_work:
         print(f"\n🚀 All imports working! Ready to fetch NSE data!")
+        sys.exit(0)
     else:
         print(f"\n⚠️  Some imports failed. Please install missing packages.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

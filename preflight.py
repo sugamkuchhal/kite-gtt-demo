@@ -1,11 +1,27 @@
-from kiteconnect import KiteConnect
 import sys
+import subprocess
 
 from runtime_paths import get_api_key_path, get_access_token_path
 
 # This script has no Google Sheets dependency by design.
 
+def ensure_kiteconnect():
+    try:
+        from kiteconnect import KiteConnect
+        return KiteConnect
+    except ImportError:
+        print("kiteconnect not installed. Attempting to install...")
+        try:
+            subprocess.check_call([sys.executable, "-m", "pip", "install", "kiteconnect"])
+            from kiteconnect import KiteConnect
+            print("kiteconnect installed successfully.")
+            return KiteConnect
+        except Exception as exc:
+            print(f"Unable to install kiteconnect automatically: {exc}")
+            sys.exit(2)
+
 def main():
+    KiteConnect = ensure_kiteconnect()
     api_file = get_api_key_path()
     token_file = get_access_token_path()
 
