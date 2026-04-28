@@ -2,12 +2,13 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 
 # Path to your service account JSON file
 SERVICE_ACCOUNT_FILE = str(get_creds_path())
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-SPREADSHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
+REF_SHEETS = "PORTFOLIO"
 SHEET_NAME = "ALL_OLD_GTTs"
 CELL = "R1"
 
@@ -19,8 +20,9 @@ def main():
         "values": [["FALSE"]]
     }
 
+    spreadsheet_id = resolve_sheet_id(REF_SHEETS)
     result = service.spreadsheets().values().update(
-        spreadsheetId=SPREADSHEET_ID,
+        spreadsheetId=spreadsheet_id,
         range=f"{SHEET_NAME}!{CELL}",
         valueInputOption="USER_ENTERED",
         body=body

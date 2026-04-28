@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 
-SHEET_ID = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
+REF_SHEETS = "PORTFOLIO"
 RANGE = "ALL_OLD_GTTs!R1"
 
 def is_trigger_true():
@@ -13,7 +14,8 @@ def is_trigger_true():
         scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
         creds = Credentials.from_service_account_file(str(get_creds_path()), scopes=scopes)
         gc = gspread.authorize(creds)
-        sheet = gc.open_by_key(SHEET_ID)
+        sheet_id = resolve_sheet_id(REF_SHEETS)
+        sheet = gc.open_by_key(sheet_id)
         result = sheet.values_get(RANGE, params={"valueRenderOption": "FORMATTED_VALUE"})
         value = result.get("values", [[""]])[0][0]
 

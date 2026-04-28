@@ -3,6 +3,8 @@ import sys
 
 from runtime_paths import get_api_key_path, get_access_token_path
 
+# This script has no Google Sheets dependency by design.
+
 def main():
     api_file = get_api_key_path()
     token_file = get_access_token_path()
