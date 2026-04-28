@@ -9,6 +9,7 @@ from kiteconnect import KiteConnect
 
 from runtime_paths import get_access_token_path, get_api_key_path
 
+# This script has no Google Sheets dependency by design.
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
