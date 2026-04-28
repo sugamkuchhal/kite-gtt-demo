@@ -8,6 +8,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 
 # --- CONFIGURABLE ---
 CREDS_PATH = str(get_creds_path())
@@ -55,13 +56,14 @@ def safe_api_call(func, *args, max_retries=3, base_delay=1, **kwargs):
 
 def main():
     parser = argparse.ArgumentParser(description="Delete GTT IDs from Kite, based on sheet tab OCO_GTT_DATA.")
-    parser.add_argument('--sheet-name', required=True, help='Google Sheet filename')
+    parser.add_argument('--ref-sheets', required=True, help='Resolver key from ref_sheets.json')
     parser.add_argument('--tab-name', required=True, help='Tab name (worksheet) to process')
     args = parser.parse_args()
 
-    logger.info(f"Opening Google Sheet: {args.sheet_name} [{args.tab_name}]")
+    logger.info(f"Opening Google Sheet via ref-sheets: {args.ref_sheets} [{args.tab_name}]")
     gc = get_gsheet_client()
-    sh = gc.open(args.sheet_name)
+    sheet_id = resolve_sheet_id(args.ref_sheets)
+    sh = gc.open_by_key(sheet_id)
     ws = sh.worksheet(args.tab_name)
 
     kite = get_kite()

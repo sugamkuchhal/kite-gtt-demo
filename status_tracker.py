@@ -1,6 +1,8 @@
 # status_tracker.py
 from google_sheets_utils import write_rows, read_rows_from_sheet
 
+# This script has no Google Sheets dependency by design.
+
 def update_status_in_sheet(sheet, start_row, rows_with_status):
     """
     Updates the STATUS column in the sheet for each row in `rows_with_status`.

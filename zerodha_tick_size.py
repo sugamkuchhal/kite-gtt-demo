@@ -5,6 +5,7 @@ from kiteconnect import KiteConnect
 import sys
 
 from runtime_paths import get_api_key_path, get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 
 GSPREAD_FORMATTING_AVAILABLE = importlib.util.find_spec("gspread_formatting") is not None
 if GSPREAD_FORMATTING_AVAILABLE:
@@ -16,7 +17,7 @@ else:
 
 API_KEY_FILE = get_api_key_path()
 CREDS_JSON_PATH = str(get_creds_path())
-SHEET_URL = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE/edit"
+REF_SHEETS = "TICKER"
 TICKERS_SHEET_NAME = "TICKERS_TICK_SIZE"
 ZERODHA_SHEET_NAME = "ZERODHA_TICKERS"
 
@@ -48,7 +49,8 @@ print(f"Loaded {len(instrument_map)} instruments.")
 
 # ----------------------- open sheet (single) -----------------------
 gc = gspread.service_account(filename=CREDS_JSON_PATH)
-ss = gc.open_by_url(SHEET_URL)
+sheet_id = resolve_sheet_id(REF_SHEETS)
+ss = gc.open_by_key(sheet_id)
 tick_sheet = ss.worksheet(TICKERS_SHEET_NAME)
 
 # ----------------------- read column A (detect last non-empty row) -----------------------
