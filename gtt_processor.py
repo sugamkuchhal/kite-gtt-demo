@@ -501,9 +501,9 @@ def process_gtt_batch(kite, start_row, instruction_sheet, data_sheet):
             
             trigger_price = price_float
             limit_price = price_float
-                
-            last_price_float = float(instr.get("LIVE PRICE", 0) or 0)
 
+            last_price_float = float(instr.get("LIVE PRICE", 0) or 0)
+            
             instr_match_obj = {
                 "TICKER": raw_ticker,
                 "TYPE": raw_type,
