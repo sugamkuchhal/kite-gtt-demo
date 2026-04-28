@@ -42,7 +42,10 @@ def fetch_gtt_instructions_batch(sheet, start_row):
     return raw_instructions, filtered_instructions
 
 
-def get_instructions_sheet(ref_sheets_value=None, sheet_name=None):
+def get_instructions_sheet(ref_sheets_value=None, sheet_name=None, sheet_id=None):
+    # Backward-compatible alias: legacy callers may still pass sheet_id=...
+    if ref_sheets_value is None and sheet_id is not None:
+        ref_sheets_value = sheet_id
     if ref_sheets_value is None:
         ref_sheets_value = ref_sheets
     if sheet_name is None:

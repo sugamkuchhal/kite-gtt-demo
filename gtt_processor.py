@@ -804,7 +804,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # If provided on CLI, use them; otherwise get_instructions_sheet will fall back to config
-    instruction_sheet = get_instructions_sheet(sheet_id=getattr(args, "sheet_id", None), sheet_name=getattr(args, "sheet_name", None))
+    instruction_sheet = get_instructions_sheet(
+        ref_sheets_value=getattr(args, "sheet_id", None),
+        sheet_name=getattr(args, "sheet_name", None),
+    )
 
     kite = get_kite()
     

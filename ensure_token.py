@@ -8,8 +8,10 @@ from pathlib import Path
 from kiteconnect import KiteConnect
 from runtime_paths import get_access_token_path, get_api_key_path
 
-# NOTE: This script has no Google Sheets dependency by design.
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
+# This script has no Google Sheets dependency by design.
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+
 
 def _read_api_key():
     api_key_path = get_api_key_path()
