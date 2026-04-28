@@ -6,6 +6,8 @@ import shlex
 import sys
 from pathlib import Path
 
+# This script has no Google Sheets dependency by design.
+
 
 ROOT = Path(__file__).resolve().parent
 REQ_DIR = ROOT / "requirements"
