@@ -118,6 +118,8 @@ def main():
                 else:
                     print(f"\n🎉 All packages installed successfully!")
                     
+        except EOFError:
+            print(f"\n\n⚠️  Non-interactive shell detected; skipping auto-install prompt.")
         except KeyboardInterrupt:
             print(f"\n\n👋 Installation cancelled by user")
     
