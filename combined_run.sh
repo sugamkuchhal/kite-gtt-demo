@@ -38,7 +38,4 @@ python3 ops_sort.py --sheet-name="SARAS D G C - RTP (Reverse Trigger Point Salva
 # echo "Running: Consolidated BreakOut"
 # python3 ops_sort.py --sheet-name="SARAS D M B - Consolidated BreakOut with BOH" --green-tab="MKT_List" --red-tab="OLD_MKT_List" --yellow-tab="Action_List"
 
-echo "Running: GTT Processor"
-bash home_run.sh
-
 echo "✅ All tasks completed."
