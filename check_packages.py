@@ -3,6 +3,7 @@
 Package Installation Checker for NSE Data Fetcher
 Run this script to check which packages are installed and their versions
 """
+# This script has no Google Sheets dependency by design.
 
 import sys
 import subprocess

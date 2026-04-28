@@ -795,16 +795,18 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(
-        description="Process GTT instructions. Only accepts --sheet-id and --sheet-name which override config values."
+        description="Process GTT instructions. Requires --ref-sheets and --sheet-name."
     )
-    parser.add_argument("--sheet-id", dest="sheet_id", help="Instruction sheet ID (overrides config.INSTRUCTION_SHEET_ID)", type=str)
-    parser.add_argument("--sheet-name", dest="sheet_name", help="Instruction worksheet name (overrides config.INSTRUCTION_SHEET_NAME)", type=str)
+    parser.add_argument("--ref-sheets", dest="ref_sheets", help="Resolver key for instruction sheet (example: PORTFOLIO)", type=str, required=True)
+    parser.add_argument("--sheet-name", dest="sheet_name", help="Instruction worksheet name", type=str, required=True)
     parser.add_argument("--market-order", action="store_true", help="Process Market Orders instead of GTT")
 
     args = parser.parse_args()
 
-    # If provided on CLI, use them; otherwise get_instructions_sheet will fall back to config
-    instruction_sheet = get_instructions_sheet(sheet_id=getattr(args, "sheet_id", None), sheet_name=getattr(args, "sheet_name", None))
+    instruction_sheet = get_instructions_sheet(
+        ref_sheets_value=args.ref_sheets,
+        sheet_name=args.sheet_name,
+    )
 
     kite = get_kite()
     
