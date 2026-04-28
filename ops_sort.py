@@ -3,6 +3,7 @@ from datetime import datetime
 import argparse
 
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 
 # --- CONFIGURATION ---
 CREDENTIALS_PATH = str(get_creds_path())
@@ -14,7 +15,7 @@ def log(msg):
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--sheet-name', required=True)
+    parser.add_argument('--ref-sheets', required=True)
     parser.add_argument('--green-tab', required=True)
     parser.add_argument('--red-tab', required=True)
     parser.add_argument('--yellow-tab', required=True)
@@ -32,8 +33,9 @@ def get_rows_with_action(data_rows, keyword):
 def main():
     args = parse_args()
     log("")
+    sheet_id = resolve_sheet_id(args.ref_sheets)
     gc = gspread.service_account(filename=CREDENTIALS_PATH)
-    wb = gc.open(args.sheet_name)
+    wb = gc.open_by_key(sheet_id)
 
     green_ws = wb.worksheet(args.green_tab)
     red_ws = wb.worksheet(args.red_tab)

@@ -1,5 +1,7 @@
 #kite_session.py
 
+# This script has no Google Sheets dependency by design.
+
 import os
 import logging
 from kiteconnect import KiteConnect
@@ -55,4 +57,3 @@ def get_kite():
     kite.set_access_token(access_token)
     logging.info("✅ New access token set.")
     return kite
-
