@@ -33,6 +33,7 @@ from google.oauth2.service_account import Credentials
 from tqdm import tqdm
 
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 
 # gspread-formatting
 try:
@@ -44,7 +45,7 @@ except Exception:
 
 # ===== Editable defaults (set these once, or override via CLI) =====
 DEFAULT_CREDENTIALS_FILE = str(get_creds_path())
-DEFAULT_SPREADSHEET = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE"
+DEFAULT_REF_SHEETS = "TICKER"
 # ==================================================================
 
 # ----------------- Logging -----------------
@@ -244,14 +245,11 @@ class NSEBaseFetcher:
         return df
 
     # ----- Google Sheets helpers -----
-    def setup_google_sheets(self, credentials_file: str, spreadsheet_url_or_id: str):
+    def setup_google_sheets(self, credentials_file: str, ref_sheets: str):
         scopes = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds = Credentials.from_service_account_file(credentials_file, scopes=scopes)
         client = gspread.authorize(creds)
-        if spreadsheet_url_or_id.startswith("http"):
-            spreadsheet_id = spreadsheet_url_or_id.split("/d/")[1].split("/")[0]
-        else:
-            spreadsheet_id = spreadsheet_url_or_id
+        spreadsheet_id = resolve_sheet_id(ref_sheets)
         spreadsheet = client.open_by_key(spreadsheet_id)
         return client, spreadsheet
 
@@ -268,7 +266,7 @@ class NSEBaseFetcher:
     def upload_to_sheets(self,
                          df: pd.DataFrame,
                          credentials_file: str,
-                         spreadsheet_url_or_id: str,
+                         ref_sheets: str,
                          worksheet_name: str,
                          initial_batch_size: int = 200):
         """
@@ -276,7 +274,7 @@ class NSEBaseFetcher:
         Also applies full formatting: 2-decimals for numeric columns, date format for Last_Updated,
         and freezes header row.
         """
-        client, spreadsheet = self.setup_google_sheets(credentials_file, spreadsheet_url_or_id)
+        client, spreadsheet = self.setup_google_sheets(credentials_file, ref_sheets)
         try:
             worksheet = spreadsheet.worksheet(worksheet_name)
             worksheet.clear()
@@ -436,6 +434,7 @@ def human_summary(mode: str, success_count: int, failed: List[str]):
 def main():
     parser = argparse.ArgumentParser(description="Combined NSE Stock & ETF Data Fetcher")
     parser.add_argument("--mode", choices=["stock", "etf"], required=True, help="Run mode: stock or etf")
+    parser.add_argument("--ref-sheets", type=str, default=DEFAULT_REF_SHEETS, help="Resolver key from ref_sheets.json")
     parser.add_argument("--ticker-file", type=str, help="Custom ticker file (TXT or CSV). Required for ETF mode.")
     parser.add_argument("--worksheet", type=str, required=True, help="Worksheet/tab name to write (required)")
     parser.add_argument("--max-workers", type=int, default=10, help="Thread pool size for Yahoo fetches")
@@ -443,7 +442,7 @@ def main():
     args = parser.parse_args()
 
     mode = args.mode.lower()
-    spreadsheet_to_use = DEFAULT_SPREADSHEET
+    ref_sheets = args.ref_sheets
 
     if mode == "stock":
         fetcher = NSEStockDataFetcher(max_workers=args.max_workers)
@@ -473,7 +472,7 @@ def main():
 
     # upload to google sheets (always)
     try:
-        fetcher.upload_to_sheets(df, DEFAULT_CREDENTIALS_FILE, spreadsheet_to_use, worksheet, initial_batch_size=args.batch_size)
+        fetcher.upload_to_sheets(df, DEFAULT_CREDENTIALS_FILE, ref_sheets, worksheet, initial_batch_size=args.batch_size)
     except Exception as e:
         logger.error(f"Google Sheets upload failed: {e}")
         # still continue to summary

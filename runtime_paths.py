@@ -4,6 +4,8 @@ from pathlib import Path
 import os
 from typing import Iterable, Optional
 
+# This script has no Google Sheets dependency by design.
+
 _DEFAULT_LEGACY_ROOT = Path("/Users/sugamkuchhal/Documents/kite-gtt-demo")
 
 
