@@ -6,6 +6,11 @@ from google.oauth2.service_account import Credentials
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
 
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("ops_sort_kwk")
+atexit.register(log_end, _RUN_CTX)
 CREDS_PATH = str(get_creds_path())
 
 def load_sheet(ref_sheets):
