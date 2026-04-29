@@ -6,6 +6,11 @@ import time
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
 
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("prepare_feed_list")
+atexit.register(log_end, _RUN_CTX)
 CREDS_PATH = str(get_creds_path())
 
 # --- tiny retry helper (exponential backoff) for 429s on READ ops only ---
