@@ -48,7 +48,6 @@ jobs:
 
           MODE_VAL="${MODE:-}"
           CMD_VAL="${SCRIPT:-}"
-          CRON_EXPR="${{ github.event.schedule }}"
           EVENT_NAME="${{ github.event_name }}"
 
           TODAY=$(TZ=Asia/Kolkata date +%d-%m-%Y)
