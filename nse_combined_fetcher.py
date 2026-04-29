@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("nse_combined_fetcher")
+atexit.register(log_end, _RUN_CTX)
 """
 nse_combined_fetcher.py
 

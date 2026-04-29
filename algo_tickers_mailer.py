@@ -15,6 +15,11 @@ import os
 from runtime_paths import get_creds_path, get_smtp_token_path
 from ref_sheets_utils import resolve_sheet_id
 
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("algo_tickers_mailer")
+atexit.register(log_end, _RUN_CTX)
 SMTP_TOKEN_FILE = str(get_smtp_token_path())
 
 # ==========================

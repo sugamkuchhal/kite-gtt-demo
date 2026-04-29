@@ -9,6 +9,11 @@ from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
 
 
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("nse_data_etl")
+atexit.register(log_end, _RUN_CTX)
 CREDS_PATH = str(get_creds_path())
 SOURCE_REF_SHEETS = "TICKER"
 STOCK_SHEET_NAME = "NSE_Stock_Data"
