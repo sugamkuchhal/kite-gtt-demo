@@ -2,6 +2,11 @@ from kiteconnect import KiteConnect, exceptions as kite_exceptions
 from kite_session import get_kite
 from fetch_google_gtt_instructions import fetch_gtt_instructions_batch, get_instructions_sheet
 from fetch_google_existing_gtts import fetch_existing_gtts_batch, get_tracking_sheet
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("gtt_processor")
+atexit.register(log_end, _RUN_CTX)
 # --- Batch size: single source of truth from config.py ---
 try:
     import config

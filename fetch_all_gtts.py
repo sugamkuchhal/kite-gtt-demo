@@ -4,6 +4,11 @@ from kite_session import get_kite
 from google_sheets_utils import get_gsheet_client
 from ref_sheets_utils import resolve_sheet_id
 
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("fetch_all_gtts")
+atexit.register(log_end, _RUN_CTX)
 # Google Sheet details
 ref_sheets = "PORTFOLIO"
 sheet_id = resolve_sheet_id(ref_sheets)

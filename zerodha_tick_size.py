@@ -1,3 +1,8 @@
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("zerodha_tick_size")
+atexit.register(log_end, _RUN_CTX)
 # zerodha_tick_size_no_notfound.py
 import importlib.util
 import gspread
@@ -62,17 +67,20 @@ if len(col_a) <= 1:
 # last_row includes header row 1; data rows are 2..last_row
 last_row = len(col_a)
 n_data_rows = last_row - 1
-print(f"Detected data rows A2..A{last_row} ({n_data_rows} rows). Will only process non-empty A cells.")
+write_last_row = tick_sheet.row_count
+write_data_rows = write_last_row - 1
+print(f"Detected data rows A2..A{last_row} ({n_data_rows} rows).")
+print(f"Will rewrite columns C/D/E for full sheet range A2..A{write_last_row} ({write_data_rows} rows).")
 
 # ----------------------- CLEAR C/D/E RIGHT AT START -----------------------
-clear_range = f"C2:E{last_row}"
+clear_range = f"C2:E{write_last_row}"
 print(f"Clearing {clear_range} right at start ...")
 tick_sheet.batch_clear([clear_range])
 
-# initialize update arrays of length n_data_rows (one inner list per row)
-updates_col_c = [[CLEAR_SENTINEL] for _ in range(n_data_rows)]
-updates_col_d = [[CLEAR_SENTINEL] for _ in range(n_data_rows)]
-updates_col_e = [[CLEAR_SENTINEL] for _ in range(n_data_rows)]
+# initialize update arrays of length write_data_rows (one inner list per row)
+updates_col_c = [[CLEAR_SENTINEL] for _ in range(write_data_rows)]
+updates_col_d = [[CLEAR_SENTINEL] for _ in range(write_data_rows)]
+updates_col_e = [[CLEAR_SENTINEL] for _ in range(write_data_rows)]
 
 # ----------------------- read embedded Zerodha mapping from TICKERS_TICK_SIZE G:J and build lookup -----------------------
 i_col = tick_sheet.col_values(9)   
@@ -93,7 +101,7 @@ found_with_alternate = []
 not_found_even_with_alt = []  # keeps mains for which alternate existed but alternate's tick missing
 log_lines = []
 
-for i in range(n_data_rows):
+for i in range(write_data_rows):
     # row number in sheet
     sheet_row = i + 2
     main_ticker = col_a[i + 1].strip() if (i + 1) < len(col_a) else ""
@@ -141,14 +149,14 @@ for i in range(n_data_rows):
         log_lines.append(f"  -> Alternate '{alt}' not found in instrument_map; leaving E blank")
 
 # ----------------------- batch update columns (numerics for C and E where applicable) -----------------------
-range_c = f"C2:C{last_row}"
-range_d = f"D2:D{last_row}"
-range_e = f"E2:E{last_row}"
+range_c = f"C2:C{write_last_row}"
+range_d = f"D2:D{write_last_row}"
+range_e = f"E2:E{write_last_row}"
 
 # Validate lengths
-assert len(updates_col_c) == n_data_rows
-assert len(updates_col_d) == n_data_rows
-assert len(updates_col_e) == n_data_rows
+assert len(updates_col_c) == write_data_rows
+assert len(updates_col_d) == write_data_rows
+assert len(updates_col_e) == write_data_rows
 
 print(f"Writing updates to {range_c}, {range_d}, {range_e} ...")
 tick_sheet.update(range_name=range_c, values=updates_col_c)
