@@ -5,6 +5,11 @@ from datetime import datetime
 from ref_sheets_utils import resolve_sheet_id
 
 
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("fetch_all_orders")
+atexit.register(log_end, _RUN_CTX)
 ref_sheets = "PORTFOLIO"
 sheet_id = resolve_sheet_id(ref_sheets)
 tab_name_orders = "ZERODHA_ORDERS"

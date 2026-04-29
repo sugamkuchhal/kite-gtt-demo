@@ -1,12 +1,11 @@
 name: Unified Script Runner v2
 
 on:
+  # NOTE: GitHub cron uses UTC. Each cron below is the UTC equivalent of intended IST time.
   schedule:
-    - cron: "0,30 4-9 * * 1-5"   # 09:30–15:15 IST every 30 mins, Mon–Fri
- #   - cron: "15,45 4-9 * * 1-5"   # 09:30–15:15 IST every 30 mins, Mon–Fri
-    - cron: "30 12 * * 1-5"      # 18:00 IST (4:00 PM) Mon–Fri
-    - cron: "0,30 3 * * *"         # 08:30,08:45,09:00 IST (all days)
- #   - cron: "15 3 * * *"         # 08:30,08:45,09:00 IST (all days)
+    - cron: "0,30 4-9 * * 1-5"   # 09:30–15:00 IST every 30 mins, Mon–Fri
+    - cron: "0 11 * * 1-5"       # 16:30 IST, Mon–Fri
+    - cron: "0,30 3 * * *"       # 08:30,09:00 IST (all days)
   workflow_dispatch:
     inputs:
       script:
@@ -26,7 +25,7 @@ on:
 # Overlap safety: queue new runs until the current one finishes
 concurrency:
   group: unified-script-runner
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -51,7 +50,7 @@ jobs:
           CMD_VAL="${SCRIPT:-}"
           CRON_EXPR="${{ github.event.schedule }}"
           EVENT_NAME="${{ github.event_name }}"
-          
+
           TODAY=$(TZ=Asia/Kolkata date +%d-%m-%Y)
           HOLIDAY_FILE="holidays.txt"
 
@@ -76,13 +75,13 @@ jobs:
           elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$MODE_VAL" != "SELECT" ]; then
             ACTION="$MODE_VAL"
           
-          # 3. Scheduled run → map cron → action
+          # 3. Scheduled run → map known cron expressions to action
           elif [ "$EVENT_NAME" = "schedule" ]; then
             case "$CRON_EXPR" in
               "0,30 4-9 * * 1-5")
                 ACTION="midday"
                 ;;
-              "30 12 * * 1-5")
+              "0 11 * * 1-5")
                 ACTION="eod"
                 ;;
               "0,30 3 * * *")
@@ -99,7 +98,7 @@ jobs:
             SHOULD_RUN=false
             echo "::notice::No action selected (SELECT). Exiting."
           else
-            echo "::notice::action=${ACTION} (event=${EVENT_NAME})"
+            echo "::notice::action=${ACTION} (event=${EVENT_NAME}, cron=${CRON_EXPR:-n/a}, ist=$(TZ=Asia/Kolkata date +%F\ %T))"
           fi
 
           echo "action=$ACTION" >> "$GITHUB_OUTPUT"

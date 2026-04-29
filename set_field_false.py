@@ -4,6 +4,11 @@ from googleapiclient.discovery import build
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
 
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("set_field_false")
+atexit.register(log_end, _RUN_CTX)
 # Path to your service account JSON file
 SERVICE_ACCOUNT_FILE = str(get_creds_path())
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]

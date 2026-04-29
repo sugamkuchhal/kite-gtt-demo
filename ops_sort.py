@@ -5,6 +5,11 @@ import argparse
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
 
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("ops_sort")
+atexit.register(log_end, _RUN_CTX)
 # --- CONFIGURATION ---
 CREDENTIALS_PATH = str(get_creds_path())
 
