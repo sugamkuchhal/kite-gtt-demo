@@ -1,12 +1,11 @@
 name: Unified Script Runner v2
 
 on:
+  # NOTE: GitHub cron uses UTC. Each cron below is the UTC equivalent of intended IST time.
   schedule:
-    - cron: "0,30 4-9 * * 1-5"   # 09:30–15:15 IST every 30 mins, Mon–Fri
- #   - cron: "15,45 4-9 * * 1-5"   # 09:30–15:15 IST every 30 mins, Mon–Fri
-    - cron: "30 12 * * 1-5"      # 18:00 IST (4:00 PM) Mon–Fri
-    - cron: "0,30 3 * * *"         # 08:30,09:00 IST (all days)
- #   - cron: "15 3 * * *"         # 08:30,08:45,09:00 IST (all days)
+    - cron: "0,30 4-9 * * 1-5"   # 09:30–15:00 IST every 30 mins, Mon–Fri
+    - cron: "0 11 * * 1-5"       # 16:30 IST, Mon–Fri
+    - cron: "0,30 3 * * *"       # 08:30,09:00 IST (all days)
   workflow_dispatch:
     inputs:
       script:
@@ -50,10 +49,7 @@ jobs:
           MODE_VAL="${MODE:-}"
           CMD_VAL="${SCRIPT:-}"
           EVENT_NAME="${{ github.event_name }}"
-          IST_HOUR=$(TZ=Asia/Kolkata date +%H)
-          IST_MIN=$(TZ=Asia/Kolkata date +%M)
-          IST_DOW=$(TZ=Asia/Kolkata date +%u)
-          
+
           TODAY=$(TZ=Asia/Kolkata date +%d-%m-%Y)
           HOLIDAY_FILE="holidays.txt"
 
@@ -78,17 +74,22 @@ jobs:
           elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$MODE_VAL" != "SELECT" ]; then
             ACTION="$MODE_VAL"
           
-          # 3. Scheduled run → map IST time window → action
+          # 3. Scheduled run → map known cron expressions to action
           elif [ "$EVENT_NAME" = "schedule" ]; then
-            if [ "$IST_DOW" -ge 1 ] && [ "$IST_DOW" -le 5 ] && [ "$IST_HOUR" -ge 4 ] && [ "$IST_HOUR" -le 9 ] && { [ "$IST_MIN" = "00" ] || [ "$IST_MIN" = "30" ]; }; then
-              ACTION="midday"
-            elif [ "$IST_DOW" -ge 1 ] && [ "$IST_DOW" -le 5 ] && [ "$IST_HOUR" = "12" ] && [ "$IST_MIN" = "30" ]; then
-              ACTION="eod"
-            elif [ "$IST_HOUR" = "03" ] && { [ "$IST_MIN" = "00" ] || [ "$IST_MIN" = "30" ]; }; then
-              ACTION="refresh"
-            else
-              ACTION="none"
-            fi
+            case "$CRON_EXPR" in
+              "0,30 4-9 * * 1-5")
+                ACTION="midday"
+                ;;
+              "0 11 * * 1-5")
+                ACTION="eod"
+                ;;
+              "0,30 3 * * *")
+                ACTION="refresh"
+                ;;
+              *)
+                ACTION="none"
+                ;;
+            esac
           fi
           
           SHOULD_RUN=true
@@ -96,7 +97,7 @@ jobs:
             SHOULD_RUN=false
             echo "::notice::No action selected (SELECT). Exiting."
           else
-            echo "::notice::action=${ACTION} (event=${EVENT_NAME}, ist=$(TZ=Asia/Kolkata date +%F\ %T))"
+            echo "::notice::action=${ACTION} (event=${EVENT_NAME}, cron=${CRON_EXPR:-n/a}, ist=$(TZ=Asia/Kolkata date +%F\ %T))"
           fi
 
           echo "action=$ACTION" >> "$GITHUB_OUTPUT"
