@@ -4,6 +4,11 @@ from google.oauth2.service_account import Credentials
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
 
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("append_new_orders")
+atexit.register(log_end, _RUN_CTX)
 CREDS_PATH = str(get_creds_path())
 ref_sheets = "PORTFOLIO"
 tab_name_src = "LATEST_ORDERS"

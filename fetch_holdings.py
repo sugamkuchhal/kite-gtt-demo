@@ -1,3 +1,8 @@
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("fetch_holdings")
+atexit.register(log_end, _RUN_CTX)
 # fetch_holdings.py
 
 import logging

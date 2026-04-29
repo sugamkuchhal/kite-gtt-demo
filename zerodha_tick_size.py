@@ -1,3 +1,8 @@
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("zerodha_tick_size")
+atexit.register(log_end, _RUN_CTX)
 # zerodha_tick_size_no_notfound.py
 import importlib.util
 import gspread

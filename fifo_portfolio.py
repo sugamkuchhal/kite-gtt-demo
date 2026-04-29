@@ -6,6 +6,11 @@ from oauth2client.service_account import ServiceAccountCredentials
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
 
+import atexit
+from script_logger import log_start, log_end
+
+_RUN_CTX = log_start("fifo_portfolio")
+atexit.register(log_end, _RUN_CTX)
 # --- CONFIG ---
 ref_sheets = "PORTFOLIO"
 tab_name = "ALL_ORDERS"
