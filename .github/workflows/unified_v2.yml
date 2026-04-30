@@ -43,11 +43,13 @@ jobs:
         env:
           MODE: ${{ github.event.inputs.mode }}
           SCRIPT: ${{ github.event.inputs.script }}
+          CRON_EXPR: ${{ github.event.schedule }}
         run: |
           set -euo pipefail
 
-          MODE_VAL="${MODE:-}"
+          MODE_VAL="${MODE:-SELECT}"
           CMD_VAL="${SCRIPT:-}"
+          CRON_EXPR_VAL="${CRON_EXPR:-}"
           EVENT_NAME="${{ github.event_name }}"
 
           TODAY=$(TZ=Asia/Kolkata date +%d-%m-%Y)
@@ -76,7 +78,7 @@ jobs:
           
           # 3. Scheduled run → map known cron expressions to action
           elif [ "$EVENT_NAME" = "schedule" ]; then
-            case "$CRON_EXPR" in
+            case "$CRON_EXPR_VAL" in
               "0,30 4-9 * * 1-5")
                 ACTION="midday"
                 ;;
@@ -97,7 +99,7 @@ jobs:
             SHOULD_RUN=false
             echo "::notice::No action selected (SELECT). Exiting."
           else
-            echo "::notice::action=${ACTION} (event=${EVENT_NAME}, cron=${CRON_EXPR:-n/a}, ist=$(TZ=Asia/Kolkata date +%F\ %T))"
+            echo "::notice::action=${ACTION} (event=${EVENT_NAME}, cron=${CRON_EXPR_VAL:-n/a}, ist=$(TZ=Asia/Kolkata date +%F\ %T))"
           fi
 
           echo "action=$ACTION" >> "$GITHUB_OUTPUT"
