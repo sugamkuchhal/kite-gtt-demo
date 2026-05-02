@@ -301,9 +301,7 @@ jobs:
               bash combined_feeder.sh
               python3 set_field_false.py
               python3 fetch_all_gtts.py
-              python3 fetch_all_orders.py
-              python3 append_new_orders.py
-              python3 fifo_portfolio.py
+              bash combined_order_portfolio_run.sh
               python3 fetch_holdings.py
               python3 date_ext.py
               python3 data_val.py
