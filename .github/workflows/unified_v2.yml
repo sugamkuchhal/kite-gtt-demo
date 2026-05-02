@@ -291,7 +291,7 @@ jobs:
               bash combined_feeder.sh
               python3 set_field_false.py
               bash combined_holiday_run.sh
-              bash combined_run.sh
+              bash combined_main_run.sh
               bash combined_home_run.sh
               echo "::endgroup::"
             elif [ "$ACTION" = "eod" ]; then
@@ -307,7 +307,7 @@ jobs:
               python3 fetch_holdings.py
               python3 date_ext.py
               python3 data_val.py
-              bash combined_run.sh
+              bash combined_main_run.sh
               bash combined_home_run.sh
               echo "::endgroup::"
             else
