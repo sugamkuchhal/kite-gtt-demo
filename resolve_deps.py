@@ -237,7 +237,7 @@ def map_imports_to_packages(imports: set, import_map: dict):
 
 def main():
     parser = argparse.ArgumentParser(description="Resolve dependency packages for an action/script.")
-    parser.add_argument("--action", required=True, help="Action: script|refresh|midday|eod")
+    parser.add_argument("--action", required=True, help="Action: script|refresh|midday|eod|eod_holiday")
     parser.add_argument("--command", default="", help="Command for script mode (may include args)")
     parser.add_argument("--need-login", default="false", help="true if login is required")
     args = parser.parse_args()
