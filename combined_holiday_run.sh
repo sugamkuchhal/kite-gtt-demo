@@ -2,9 +2,7 @@
 set -euo pipefail
 
 python3 zerodha_tick_size.py
-python3 nse_combined_fetcher.py --mode stock --ticker-file nse_stock_list.txt --worksheet "NSE_Stock_Data" --max-workers 3 --batch-size 50
-python3 nse_combined_fetcher.py --mode etf --ticker-file nse_etf_list.txt --worksheet "NSE_ETF_Data" --max-workers 3 --batch-size 50
-python3 nse_data_etl.py
+bash combined_fetcher.sh
 python3 prepare_feed_date_ext.py
 python3 prepare_feed_data_val.py
 python3 prepare_feed_list.py --ref-sheets "FEED" --source-sheet "SGST_OPEN_LIST" --dest-sheet "SGST_FILTERED_TICKERS"
