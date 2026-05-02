@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-python3 set_field_false.py
 python3 fetch_all_gtts.py
 python3 fetch_holdings.py
 python3 date_ext.py
