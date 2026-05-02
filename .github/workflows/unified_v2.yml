@@ -54,15 +54,13 @@ jobs:
 
           TODAY=$(TZ=Asia/Kolkata date +%d-%m-%Y)
           HOLIDAY_FILE="holidays.txt"
+          IS_HOLIDAY=false
 
-          # Skip scheduled runs on holidays
+          # Mark holidays for scheduled runs; EOD can use a dedicated holiday chain.
           if [ "$EVENT_NAME" = "schedule" ] && [ -f "$HOLIDAY_FILE" ]; then
             if grep -Fxq "$TODAY" "$HOLIDAY_FILE"; then
-              echo "::notice::Holiday ($TODAY) → skipping scheduled run"
-              echo "action=none" >> "$GITHUB_OUTPUT"
-              echo "should_run=false" >> "$GITHUB_OUTPUT"
-              echo "command=" >> "$GITHUB_OUTPUT"
-              exit 0
+              IS_HOLIDAY=true
+              echo "::notice::Holiday detected ($TODAY)"
             fi
           fi
           
@@ -80,10 +78,19 @@ jobs:
           elif [ "$EVENT_NAME" = "schedule" ]; then
             case "$CRON_EXPR_VAL" in
               "0,30 4-9 * * 1-5")
-                ACTION="midday"
+                if [ "$IS_HOLIDAY" = "true" ]; then
+                  ACTION="none"
+                  echo "::notice::Holiday ($TODAY) → skipping midday scheduled run"
+                else
+                  ACTION="midday"
+                fi
                 ;;
               "0 11 * * 1-5")
-                ACTION="eod"
+                if [ "$IS_HOLIDAY" = "true" ]; then
+                  ACTION="eod_holiday"
+                else
+                  ACTION="eod"
+                fi
                 ;;
               "0,30 3 * * *")
                 ACTION="refresh"
@@ -105,6 +112,7 @@ jobs:
           echo "action=$ACTION" >> "$GITHUB_OUTPUT"
           echo "should_run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
           echo "command=$CMD_VAL" >> "$GITHUB_OUTPUT"
+          echo "is_holiday=$IS_HOLIDAY" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -275,6 +283,10 @@ jobs:
               python3 fetch_all_gtts.py
               python3 fetch_all_orders.py
               bash combined_home_run_mini.sh
+              echo "::endgroup::"
+            elif [ "$ACTION" = "eod_holiday" ]; then
+              echo "::group::RUN: EOD holiday chain"
+              bash combined_holiday_run.sh
               echo "::endgroup::"
             elif [ "$ACTION" = "eod" ]; then
               echo "::group::RUN: EOD chain"
