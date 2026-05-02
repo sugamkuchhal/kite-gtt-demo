@@ -289,6 +289,7 @@ jobs:
               python3 zerodha_tick_size.py
               bash combined_fetcher.sh
               bash combined_feeder.sh
+              python3 set_field_false.py
               bash combined_holiday_run.sh
               echo "::endgroup::"
             elif [ "$ACTION" = "eod" ]; then
@@ -296,11 +297,6 @@ jobs:
               python3 zerodha_tick_size.py
               bash combined_fetcher.sh
               bash combined_feeder.sh
-              python3 prepare_feed_date_ext.py
-              python3 prepare_feed_data_val.py
-              python3 prepare_feed_list.py --ref-sheets "FEED" --source-sheet "SGST_OPEN_LIST" --dest-sheet "SGST_FILTERED_TICKERS"
-              python3 prepare_feed_list.py --ref-sheets "FEED" --source-sheet "SUPER_OPEN_LIST" --dest-sheet "SUPER_FILTERED_TICKERS"
-              python3 prepare_feed_list.py --ref-sheets "FEED" --source-sheet "TURTLE_OPEN_LIST" --dest-sheet "TURTLE_FILTERED_TICKERS"
               python3 set_field_false.py
               python3 fetch_all_gtts.py
               python3 fetch_all_orders.py
