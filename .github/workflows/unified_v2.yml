@@ -290,7 +290,8 @@ jobs:
               bash combined_fetcher.sh
               bash combined_feeder.sh
               python3 set_field_false.py
-              bash combined_holiday_run.sh
+              python3 fetch_all_gtts.py
+              python3 fetch_holdings.py
               bash combined_main_run.sh
               bash combined_home_run.sh
               echo "::endgroup::"
@@ -303,8 +304,6 @@ jobs:
               python3 fetch_all_gtts.py
               bash combined_order_portfolio_run.sh
               python3 fetch_holdings.py
-              python3 date_ext.py
-              python3 data_val.py
               bash combined_main_run.sh
               bash combined_home_run.sh
               echo "::endgroup::"
