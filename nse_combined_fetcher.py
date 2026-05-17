@@ -488,4 +488,12 @@ def main():
     time.sleep(60)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        logger.warning("Interrupted by user.")
+        raise SystemExit(130)
+    except Exception:
+        logger.exception("nse_combined_fetcher failed.")
+        raise SystemExit(1)

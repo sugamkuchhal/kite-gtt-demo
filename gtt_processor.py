@@ -797,102 +797,110 @@ def run_fetch_all_gtts_script():
         logger.error(f"Failed to run fetch_all_gtts.py: {e}")
 
 if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(
-        description="Process GTT instructions. Requires --ref-sheets and --sheet-name."
-    )
-    parser.add_argument("--ref-sheets", dest="ref_sheets", help="Resolver key for instruction sheet (example: PORTFOLIO)", type=str, required=True)
-    parser.add_argument("--sheet-name", dest="sheet_name", help="Instruction worksheet name", type=str, required=True)
-    parser.add_argument("--market-order", action="store_true", help="Process Market Orders instead of GTT")
-
-    args = parser.parse_args()
-
-    instruction_sheet = get_instructions_sheet(
-        ref_sheets_value=args.ref_sheets,
-        sheet_name=args.sheet_name,
-    )
-
-    kite = get_kite()
-    
-    if args.market_order:
-
-        # --- CLEAR STATUS COLUMN FOR MARKET MODE ---
-        headers = instruction_sheet.row_values(1)
-        try:
-            status_col_idx = headers.index("STATUS") + 1
-            last_row = instruction_sheet.row_count
-            col_letter = colnum_to_a1(status_col_idx)
-            clear_range = f"{col_letter}2:{col_letter}{last_row}"
-            instruction_sheet.batch_clear([clear_range])
-            logger.info(f"Cleared STATUS column for MARKET mode: {clear_range}")
-        except ValueError:
-            logger.warning("STATUS column not found; skipping clear step")
-
-        # Process MKT_INS sheet directly
-        status_manager = SheetStatusManager(instruction_sheet)
-        process_market_sheet(kite, instruction_sheet, status_manager, logger)
-        status_manager.flush_status_updates()
-    else:
-        # Default: GTT flow
-        data_sheet = get_tracking_sheet()
-        main(instruction_sheet=instruction_sheet, data_sheet=data_sheet, kite=kite)
-
-    # run optional post-processing (kept as-is; it logs on failure)
-    run_fetch_all_gtts_script()
-
-    # ------------------ POST-CHECKS: specific cells & logging ------------------
-    def _check_cell_and_log(spreadsheet, tab_name, cell_addr, friendly_name=None):
-        """
-        Read spreadsheet.worksheet(tab_name).acell(cell_addr).value and log:
-         - INFO with ✅ message if value == "0"
-         - ERROR with ❌ message otherwise
-        Any exception becomes an ERROR log.
-        """
-        if friendly_name is None:
-            friendly_name = f"{tab_name}!{cell_addr}"
-
-        try:
-            try:
-                ws = spreadsheet.worksheet(tab_name)
-            except Exception as e:
-                logger.error(f"❌ Could not open worksheet '{tab_name}' to check {friendly_name}: {e}")
-                return
-
-            try:
-                val = ws.acell(cell_addr).value
-            except Exception as e:
-                logger.error(f"❌ Could not read cell {friendly_name}: {e}")
-                return
-
-            # Normalize and compare to string "0"
-            val_norm = (str(val).strip() if val is not None else "")
-            if val_norm == "0":
-                logger.info(f"✅ Post-check passed: {friendly_name} = 0 → Process completed successfully")
-            else:
-                logger.error(f"❌ Post-check failed: {friendly_name} = {val_norm or '<EMPTY/None>'} → Process not completed")
-
-        except Exception as e:
-            logger.error(f"❌ Unexpected error while checking {friendly_name}: {e}")
-
-    # Use the spreadsheet object associated with instruction_sheet (so CLI override works)
     try:
-        spreadsheet = instruction_sheet.spreadsheet  # gspread Worksheet -> Spreadsheet
-    except Exception:
-        # As a fallback, try to resolve spreadsheet from data_sheet if available
+        import argparse
+
+        parser = argparse.ArgumentParser(
+            description="Process GTT instructions. Requires --ref-sheets and --sheet-name."
+        )
+        parser.add_argument("--ref-sheets", dest="ref_sheets", help="Resolver key for instruction sheet (example: PORTFOLIO)", type=str, required=True)
+        parser.add_argument("--sheet-name", dest="sheet_name", help="Instruction worksheet name", type=str, required=True)
+        parser.add_argument("--market-order", action="store_true", help="Process Market Orders instead of GTT")
+
+        args = parser.parse_args()
+
+        instruction_sheet = get_instructions_sheet(
+            ref_sheets_value=args.ref_sheets,
+            sheet_name=args.sheet_name,
+        )
+
+        kite = get_kite()
+        
+        if args.market_order:
+
+            # --- CLEAR STATUS COLUMN FOR MARKET MODE ---
+            headers = instruction_sheet.row_values(1)
+            try:
+                status_col_idx = headers.index("STATUS") + 1
+                last_row = instruction_sheet.row_count
+                col_letter = colnum_to_a1(status_col_idx)
+                clear_range = f"{col_letter}2:{col_letter}{last_row}"
+                instruction_sheet.batch_clear([clear_range])
+                logger.info(f"Cleared STATUS column for MARKET mode: {clear_range}")
+            except ValueError:
+                logger.warning("STATUS column not found; skipping clear step")
+
+            # Process MKT_INS sheet directly
+            status_manager = SheetStatusManager(instruction_sheet)
+            process_market_sheet(kite, instruction_sheet, status_manager, logger)
+            status_manager.flush_status_updates()
+        else:
+            # Default: GTT flow
+            data_sheet = get_tracking_sheet()
+            main(instruction_sheet=instruction_sheet, data_sheet=data_sheet, kite=kite)
+
+        # run optional post-processing (kept as-is; it logs on failure)
+        run_fetch_all_gtts_script()
+
+        # ------------------ POST-CHECKS: specific cells & logging ------------------
+        def _check_cell_and_log(spreadsheet, tab_name, cell_addr, friendly_name=None):
+            """
+            Read spreadsheet.worksheet(tab_name).acell(cell_addr).value and log:
+             - INFO with ✅ message if value == "0"
+             - ERROR with ❌ message otherwise
+            Any exception becomes an ERROR log.
+            """
+            if friendly_name is None:
+                friendly_name = f"{tab_name}!{cell_addr}"
+
+            try:
+                try:
+                    ws = spreadsheet.worksheet(tab_name)
+                except Exception as e:
+                    logger.error(f"❌ Could not open worksheet '{tab_name}' to check {friendly_name}: {e}")
+                    return
+
+                try:
+                    val = ws.acell(cell_addr).value
+                except Exception as e:
+                    logger.error(f"❌ Could not read cell {friendly_name}: {e}")
+                    return
+
+                # Normalize and compare to string "0"
+                val_norm = (str(val).strip() if val is not None else "")
+                if val_norm == "0":
+                    logger.info(f"✅ Post-check passed: {friendly_name} = 0 → Process completed successfully")
+                else:
+                    logger.error(f"❌ Post-check failed: {friendly_name} = {val_norm or '<EMPTY/None>'} → Process not completed")
+
+            except Exception as e:
+                logger.error(f"❌ Unexpected error while checking {friendly_name}: {e}")
+
+        # Use the spreadsheet object associated with instruction_sheet (so CLI override works)
         try:
-            spreadsheet = data_sheet.spreadsheet
+            spreadsheet = instruction_sheet.spreadsheet  # gspread Worksheet -> Spreadsheet
         except Exception:
-            spreadsheet = None
+            # As a fallback, try to resolve spreadsheet from data_sheet if available
+            try:
+                spreadsheet = data_sheet.spreadsheet
+            except Exception:
+                spreadsheet = None
 
-    if spreadsheet is None:
-        logger.error("❌ Could not resolve Spreadsheet object for post-checks (neither instruction_sheet nor data_sheet provided a parent). Skipping post-checks.")
-    else:
-        # The four checks you requested:
-        _check_cell_and_log(spreadsheet, "DUP_ZERODHA_GTT_DATA", "O1", "DUP_ZERODHA_GTT_DATA!O1")
-        _check_cell_and_log(spreadsheet, "DUP_ZERODHA_GTT_DATA", "Q1", "DUP_ZERODHA_GTT_DATA!Q1")
-        _check_cell_and_log(spreadsheet, "MATCH_OLD_GTT_INS", "L1", "MATCH_OLD_GTT_INS!L1")
-        _check_cell_and_log(spreadsheet, "MATCH_OLD_GTT_INS", "N1", "MATCH_OLD_GTT_INS!N1")
+        if spreadsheet is None:
+            logger.error("❌ Could not resolve Spreadsheet object for post-checks (neither instruction_sheet nor data_sheet provided a parent). Skipping post-checks.")
+        else:
+            # The four checks you requested:
+            _check_cell_and_log(spreadsheet, "DUP_ZERODHA_GTT_DATA", "O1", "DUP_ZERODHA_GTT_DATA!O1")
+            _check_cell_and_log(spreadsheet, "DUP_ZERODHA_GTT_DATA", "Q1", "DUP_ZERODHA_GTT_DATA!Q1")
+            _check_cell_and_log(spreadsheet, "MATCH_OLD_GTT_INS", "L1", "MATCH_OLD_GTT_INS!L1")
+            _check_cell_and_log(spreadsheet, "MATCH_OLD_GTT_INS", "N1", "MATCH_OLD_GTT_INS!N1")
 
-    logger.info("Script finished.")
-    time.sleep(60)
+        logger.info("Script finished.")
+        time.sleep(60)
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        logger.warning("Interrupted by user.")
+        raise SystemExit(130)
+    except Exception:
+        logger.exception("gtt_processor failed.")
+        raise SystemExit(1)
