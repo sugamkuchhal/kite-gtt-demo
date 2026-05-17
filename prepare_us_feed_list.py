@@ -150,3 +150,6 @@ if __name__ == "__main__":
     else:
         # The checks to run (each checks J1 in the target feed-list worksheet)
         _check_cell_and_log(spreadsheet, "US_FEED_LIST", "J1", "US_FEED_LIST!J1")
+
+    import time
+    time.sleep(60)
