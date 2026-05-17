@@ -1,6 +1,7 @@
 import gspread
 from datetime import datetime
 import argparse
+import logging
 
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
@@ -167,4 +168,12 @@ def main():
     log("")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        logging.warning("Interrupted by user.")
+        raise SystemExit(130)
+    except Exception:
+        logging.exception("ops_sort failed.")
+        raise SystemExit(1)

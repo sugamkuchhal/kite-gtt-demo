@@ -1,6 +1,7 @@
 import gspread
 import argparse
 import time
+import logging
 from google.oauth2.service_account import Credentials
 
 from runtime_paths import get_creds_path
@@ -114,11 +115,19 @@ if __name__ == "__main__":
     parser.add_argument("--uncheck", action="store_true", help="Skip BUY filter, copy all non-empty A")
     args = parser.parse_args()
 
-    mkt_kwk_ops_sort_email(
-        main_ref_sheets=args.ref_sheets,
-        kwk_sheet_name=args.kwk_sheet,
-        action_sheet_name=args.action_sheet,
-        special_target_ref_sheets=args.special_target_ref_sheets,
-        special_target_sheet_name=args.special_target_sheet,
-        uncheck=args.uncheck
-    )
+    try:
+        mkt_kwk_ops_sort_email(
+            main_ref_sheets=args.ref_sheets,
+            kwk_sheet_name=args.kwk_sheet,
+            action_sheet_name=args.action_sheet,
+            special_target_ref_sheets=args.special_target_ref_sheets,
+            special_target_sheet_name=args.special_target_sheet,
+            uncheck=args.uncheck
+        )
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        logging.warning("Interrupted by user.")
+        raise SystemExit(130)
+    except Exception:
+        logging.exception("ops_sort_kwk failed.")
+        raise SystemExit(1)
