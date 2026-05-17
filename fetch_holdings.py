@@ -95,6 +95,11 @@ def check_portfolio_discrepancy():
         logging.error(f"❌ Error while checking portfolio discrepancy: {e}")
 
 if __name__ == "__main__":
-    holdings = fetch_holdings()
-    write_to_gsheet(holdings)
-    check_portfolio_discrepancy()
+    try:
+        holdings = fetch_holdings()
+        write_to_gsheet(holdings)
+        check_portfolio_discrepancy()
+        raise SystemExit(0)
+    except Exception:
+        logging.exception("fetch_holdings script failed.")
+        raise SystemExit(1)

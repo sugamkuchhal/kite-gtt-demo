@@ -1,5 +1,6 @@
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
+import logging
 
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
@@ -35,5 +36,13 @@ def main():
 
     print(f"Updated {CELL} in {SHEET_NAME} to FALSE")
 
+def run_cli():
+    try:
+        main()
+        return 0
+    except Exception:
+        logging.exception("set_field_false failed.")
+        return 1
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(run_cli())
