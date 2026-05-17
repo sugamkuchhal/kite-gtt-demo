@@ -1,5 +1,6 @@
 from datetime import datetime, date
 import gspread
+import logging
 
 from google.oauth2.service_account import Credentials
 
@@ -99,5 +100,12 @@ if __name__ == "__main__":
     _ctx = log_start("date_ext")
     try:
         main()
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        logging.warning("Interrupted by user.")
+        raise SystemExit(130)
+    except Exception:
+        logging.exception("date_ext failed.")
+        raise SystemExit(1)
     finally:
         log_end(_ctx)

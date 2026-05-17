@@ -236,63 +236,71 @@ def process_and_update():
     print(f"")
 
 if __name__ == "__main__":
-    process_and_update()
-
-    print("[MAIN] Waiting 180 seconds before post-checks...")
-    import time
-    time.sleep(180)
-
-    # ------------------ POST-CHECKS: simple prints against DEST_REF_SHEETS/BANK_FINAL ----
-    def _check_cell_and_log(spreadsheet, tab_name, cell_addr, friendly_name=None):
-        """
-        Read spreadsheet.worksheet(tab_name).acell(cell_addr).value and print:
-         - ✅ message if value == "0"
-         - ❌ message otherwise (including errors)
-        """
-        if friendly_name is None:
-            friendly_name = f"{tab_name}!{cell_addr}"
-    
-        try:
-            try:
-                ws = spreadsheet.worksheet(tab_name)
-            except Exception as e:
-                print(f"❌ Could not open worksheet '{tab_name}' to check {friendly_name}: {e}")
-                return
-    
-            try:
-                val = ws.acell(cell_addr).value
-            except Exception as e:
-                print(f"❌ Could not read cell {friendly_name}: {e}")
-                return
-    
-            # Normalize and compare to string "0"
-            val_norm = (str(val).strip() if val is not None else "")
-            if val_norm == "0":
-                print(f"✅ Post-check passed: {friendly_name} = 0 → Process completed successfully")
-            else:
-                print(f"❌ Post-check failed: {friendly_name} = {val_norm or '<EMPTY/None>'} → Process not completed")
-    
-        except Exception as e:
-            print(f"❌ Unexpected error while checking {friendly_name}: {e}")
-    
-    # Explicitly open the destination spreadsheet used by this ETL (authoritative bank)
-    # This recreates a client so the post-check is independent of local client variables.
-    spreadsheet = None
     try:
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scope)
-        client_post = gspread.authorize(creds)
-        dest_sheet_id = resolve_sheet_id(DEST_REF_SHEETS)
-        spreadsheet = client_post.open_by_key(dest_sheet_id)
-    except Exception as e:
+        process_and_update()
+
+        print("[MAIN] Waiting 180 seconds before post-checks...")
+        import time
+        time.sleep(180)
+
+        # ------------------ POST-CHECKS: simple prints against DEST_REF_SHEETS/BANK_FINAL ----
+        def _check_cell_and_log(spreadsheet, tab_name, cell_addr, friendly_name=None):
+            """
+            Read spreadsheet.worksheet(tab_name).acell(cell_addr).value and print:
+             - ✅ message if value == "0"
+             - ❌ message otherwise (including errors)
+            """
+            if friendly_name is None:
+                friendly_name = f"{tab_name}!{cell_addr}"
+        
+            try:
+                try:
+                    ws = spreadsheet.worksheet(tab_name)
+                except Exception as e:
+                    print(f"❌ Could not open worksheet '{tab_name}' to check {friendly_name}: {e}")
+                    return
+        
+                try:
+                    val = ws.acell(cell_addr).value
+                except Exception as e:
+                    print(f"❌ Could not read cell {friendly_name}: {e}")
+                    return
+        
+                # Normalize and compare to string "0"
+                val_norm = (str(val).strip() if val is not None else "")
+                if val_norm == "0":
+                    print(f"✅ Post-check passed: {friendly_name} = 0 → Process completed successfully")
+                else:
+                    print(f"❌ Post-check failed: {friendly_name} = {val_norm or '<EMPTY/None>'} → Process not completed")
+        
+            except Exception as e:
+                print(f"❌ Unexpected error while checking {friendly_name}: {e}")
+        
+        # Explicitly open the destination spreadsheet used by this ETL (authoritative bank)
+        # This recreates a client so the post-check is independent of local client variables.
         spreadsheet = None
-        print(f"❌ Could not open destination spreadsheet for ref-sheets '{DEST_REF_SHEETS}' for post-checks: {e}")
-    
-    if spreadsheet is None:
-        print("❌ Could not resolve Spreadsheet object for post-checks. Skipping post-checks.")
-    else:
-        # The checks this ETL expects in BANK_FINAL (H1 and I1)
-        _check_cell_and_log(spreadsheet, "BANK_FINAL", "H1", "BANK_FINAL!H1")
-        _check_cell_and_log(spreadsheet, "BANK_FINAL", "I1", "BANK_FINAL!I1")
-        _check_cell_and_log(spreadsheet, "EXTREME_CHANGES", "J1", "EXTREME_CHANGES!J1")
+        try:
+            scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+            creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scope)
+            client_post = gspread.authorize(creds)
+            dest_sheet_id = resolve_sheet_id(DEST_REF_SHEETS)
+            spreadsheet = client_post.open_by_key(dest_sheet_id)
+        except Exception as e:
+            spreadsheet = None
+            print(f"❌ Could not open destination spreadsheet for ref-sheets '{DEST_REF_SHEETS}' for post-checks: {e}")
+        
+        if spreadsheet is None:
+            print("❌ Could not resolve Spreadsheet object for post-checks. Skipping post-checks.")
+        else:
+            # The checks this ETL expects in BANK_FINAL (H1 and I1)
+            _check_cell_and_log(spreadsheet, "BANK_FINAL", "H1", "BANK_FINAL!H1")
+            _check_cell_and_log(spreadsheet, "BANK_FINAL", "I1", "BANK_FINAL!I1")
+            _check_cell_and_log(spreadsheet, "EXTREME_CHANGES", "J1", "EXTREME_CHANGES!J1")
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        print("⚠️ Interrupted by user.")
+        raise SystemExit(130)
+    except Exception as e:
+        print(f"❌ nse_data_etl failed: {e}")
+        raise SystemExit(1)
     

@@ -274,4 +274,11 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        logging.warning("Interrupted by user.")
+        sys.exit(130)
+    except Exception:
+        logging.exception("auto_login failed.")
+        sys.exit(1)
