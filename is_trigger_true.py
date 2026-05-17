@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import logging
 
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
@@ -24,4 +25,12 @@ def is_trigger_true():
         return False
 
 if __name__ == "__main__":
-    print(is_trigger_true())
+    try:
+        print(is_trigger_true())
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        logging.warning("Interrupted by user.")
+        raise SystemExit(130)
+    except Exception:
+        logging.exception("is_trigger_true failed.")
+        raise SystemExit(1)
