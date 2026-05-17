@@ -895,3 +895,4 @@ if __name__ == "__main__":
         _check_cell_and_log(spreadsheet, "MATCH_OLD_GTT_INS", "N1", "MATCH_OLD_GTT_INS!N1")
 
     logger.info("Script finished.")
+    time.sleep(60)

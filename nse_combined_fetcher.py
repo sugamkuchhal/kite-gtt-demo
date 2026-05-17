@@ -485,6 +485,7 @@ def main():
     # final human-readable summary
     success_count = len(fetcher.stock_data)
     human_summary(mode, success_count, fetcher.failed_symbols)
+    time.sleep(60)
 
 if __name__ == "__main__":
     main()
