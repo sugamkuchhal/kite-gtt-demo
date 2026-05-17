@@ -155,26 +155,34 @@ def _post_checks_batch(spreadsheet):
         print(f"❌ Batch post-checks failed: {e}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Prepare Feed List from Google Sheet tabs.")
-    parser.add_argument("--ref-sheets", required=True, help="Resolver key from ref_sheets.json")
-    parser.add_argument("--source-sheet", required=True, help="Source tab name")
-    parser.add_argument("--dest-sheet", required=True, help="Destination tab name")
-    args = parser.parse_args()
-
-    prepare_feed_list(
-        ref_sheets=args.ref_sheets,
-        source_tab=args.source_sheet,
-        dest_tab=args.dest_sheet
-    )
-
-    # Resolve spreadsheet explicitly from the CLI sheet name
     try:
-        spreadsheet = load_sheet(args.ref_sheets)
-    except Exception as e:
-        spreadsheet = None
-        print(f"❌ Could not open spreadsheet for ref-sheets '{args.ref_sheets}' for post-checks: {e}")
+        parser = argparse.ArgumentParser(description="Prepare Feed List from Google Sheet tabs.")
+        parser.add_argument("--ref-sheets", required=True, help="Resolver key from ref_sheets.json")
+        parser.add_argument("--source-sheet", required=True, help="Source tab name")
+        parser.add_argument("--dest-sheet", required=True, help="Destination tab name")
+        args = parser.parse_args()
 
-    if spreadsheet is None:
-        print("❌ Could not resolve Spreadsheet object for post-checks. Skipping post-checks.")
-    else:
-        _post_checks_batch(spreadsheet)
+        prepare_feed_list(
+            ref_sheets=args.ref_sheets,
+            source_tab=args.source_sheet,
+            dest_tab=args.dest_sheet
+        )
+
+        # Resolve spreadsheet explicitly from the CLI sheet name
+        try:
+            spreadsheet = load_sheet(args.ref_sheets)
+        except Exception as e:
+            spreadsheet = None
+            print(f"❌ Could not open spreadsheet for ref-sheets '{args.ref_sheets}' for post-checks: {e}")
+
+        if spreadsheet is None:
+            print("❌ Could not resolve Spreadsheet object for post-checks. Skipping post-checks.")
+        else:
+            _post_checks_batch(spreadsheet)
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        print("⚠️ Interrupted by user.")
+        raise SystemExit(130)
+    except Exception as e:
+        print(f"❌ prepare_feed_list failed: {e}")
+        raise SystemExit(1)

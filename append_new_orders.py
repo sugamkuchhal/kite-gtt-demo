@@ -1,5 +1,6 @@
 import gspread
 from google.oauth2.service_account import Credentials
+import logging
 
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
@@ -45,5 +46,13 @@ def main():
     ws_dest.append_rows(data_rows, value_input_option="USER_ENTERED")
     print(f"✅ Appended {len(data_rows)} rows from {tab_name_src} to {tab_name_dest}.")
 
+def run_cli():
+    try:
+        main()
+        return 0
+    except Exception:
+        logging.exception("append_new_orders failed.")
+        return 1
+
 if __name__ == "__main__":
-    main()
+    raise SystemExit(run_cli())
