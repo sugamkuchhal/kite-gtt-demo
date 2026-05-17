@@ -1,6 +1,7 @@
 from datetime import datetime, date
 import gspread
 from google.oauth2.service_account import Credentials
+import logging
 
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
@@ -36,14 +37,26 @@ def init_date(sheet_title, ws_src, src_cell, ws_dest, dest_cell):
     else:
         print(f"{sheet_title} -> 🚫 Not copying: date {cell_date} is after today.")
 
-sh1_src, ws1_src = get_ws("FEED", "SGST_OPEN_LIST")
-sh1_des, ws1_des = get_ws("FEED", "SGST_OPEN_LIST")
-init_date(sh1_src.title, ws1_src, "B1", ws1_des, "A2")
+def main():
+    sh1_src, ws1_src = get_ws("FEED", "SGST_OPEN_LIST")
+    sh1_des, ws1_des = get_ws("FEED", "SGST_OPEN_LIST")
+    init_date(sh1_src.title, ws1_src, "B1", ws1_des, "A2")
 
-sh2_src, ws2_src = get_ws("FEED", "SUPER_OPEN_LIST")
-sh2_des, ws2_des = get_ws("FEED", "SUPER_OPEN_LIST")
-init_date(sh2_src.title, ws2_src, "B1", ws2_des, "A2")
+    sh2_src, ws2_src = get_ws("FEED", "SUPER_OPEN_LIST")
+    sh2_des, ws2_des = get_ws("FEED", "SUPER_OPEN_LIST")
+    init_date(sh2_src.title, ws2_src, "B1", ws2_des, "A2")
 
-sh3_src, ws3_src = get_ws("FEED", "TURTLE_OPEN_LIST")
-sh3_des, ws3_des = get_ws("FEED", "TURTLE_OPEN_LIST")
-init_date(sh3_src.title, ws3_src, "B1", ws3_des, "A2")
+    sh3_src, ws3_src = get_ws("FEED", "TURTLE_OPEN_LIST")
+    sh3_des, ws3_des = get_ws("FEED", "TURTLE_OPEN_LIST")
+    init_date(sh3_src.title, ws3_src, "B1", ws3_des, "A2")
+
+if __name__ == "__main__":
+    try:
+        main()
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        logging.warning("Interrupted by user.")
+        raise SystemExit(130)
+    except Exception:
+        logging.exception("prepare_feed_date_ext failed.")
+        raise SystemExit(1)

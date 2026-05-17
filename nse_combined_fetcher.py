@@ -485,6 +485,15 @@ def main():
     # final human-readable summary
     success_count = len(fetcher.stock_data)
     human_summary(mode, success_count, fetcher.failed_symbols)
+    time.sleep(60)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        logger.warning("Interrupted by user.")
+        raise SystemExit(130)
+    except Exception:
+        logger.exception("nse_combined_fetcher failed.")
+        raise SystemExit(1)
