@@ -1,6 +1,7 @@
 from datetime import datetime, date
 import gspread
 from google.oauth2.service_account import Credentials
+import logging
 
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
@@ -44,13 +45,24 @@ def check_gt_threshold(sheet_title, ws, cell, threshold=0.995):
         else:
             print(f"-- ❌ FAIL: Value not greater than {threshold} -> {sheet_title}")
 
-# ==== Threshold Check Example Usage: ====
+def main():
+    # ==== Threshold Check Example Usage: ====
+    sh1_src, ws1_src = get_ws("FEED", "SGST_OPEN_LIST")
+    check_gt_threshold(sh1_src.title, ws1_src, "G1")  
 
-sh1_src, ws1_src = get_ws("FEED", "SGST_OPEN_LIST")
-check_gt_threshold(sh1_src.title, ws1_src, "G1")  
+    sh2_src, ws2_src = get_ws("FEED", "SUPER_OPEN_LIST")
+    check_gt_threshold(sh2_src.title, ws2_src, "G1") 
 
-sh2_src, ws2_src = get_ws("FEED", "SUPER_OPEN_LIST")
-check_gt_threshold(sh2_src.title, ws2_src, "G1") 
+    sh3_src, ws3_src = get_ws("FEED", "TURTLE_OPEN_LIST")
+    check_gt_threshold(sh3_src.title, ws3_src, "G1") 
 
-sh3_src, ws3_src = get_ws("FEED", "TURTLE_OPEN_LIST")
-check_gt_threshold(sh3_src.title, ws3_src, "G1") 
+if __name__ == "__main__":
+    try:
+        main()
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        logging.warning("Interrupted by user.")
+        raise SystemExit(130)
+    except Exception:
+        logging.exception("prepare_feed_data_val failed.")
+        raise SystemExit(1)
