@@ -62,5 +62,13 @@ def fetch_all_gtts():
     except Exception as e:
         logging.error(f"❌ Failed to fetch/write GTTs: {e}")
 
+def run_cli():
+    try:
+        fetch_all_gtts()
+        return 0
+    except Exception:
+        logging.exception("fetch_all_gtts failed.")
+        return 1
+
 if __name__ == "__main__":
-    fetch_all_gtts()
+    raise SystemExit(run_cli())
