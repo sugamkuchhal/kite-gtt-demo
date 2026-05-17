@@ -88,6 +88,7 @@ def mkt_kwk_ops_sort_email(
     time.sleep(1)
 
     print("✅ All operations complete.")
+    time.sleep(60)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Central BUY Update Script (cross-sheet)")
