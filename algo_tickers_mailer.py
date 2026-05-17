@@ -198,4 +198,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+        raise SystemExit(0)
+    except KeyboardInterrupt:
+        logging.warning("Interrupted by user.")
+        raise SystemExit(130)
