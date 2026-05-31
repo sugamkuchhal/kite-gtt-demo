@@ -276,8 +276,8 @@ def main():
         if apply_formulas:
             row_count = len(df_data) + 1
             formula_map = {
-                'CURRENT PRICE': '=INDEX(SORT(GOOGLEFINANCE(B{r},"close",TODAY()-5,TODAY()),1,FALSE),2,2)',
-                'UNREALIZED AMOUNT': '=J{r}*N{r}',
+                'CURRENT PRICE': '=IF(J{r}=0,"",INDEX(SORT(GOOGLEFINANCE(B{r},"close",TODAY()-5,TODAY()),1,FALSE),2,2))',
+                'UNREALIZED AMOUNT': '=IF(J{r}=0,0,J{r}*N{r})',
                 'FINAL AMOUNT': '=M{r}+O{r}',
                 'PROFIT AMOUNT': '=P{r}-L{r}',
                 'PROFIT STATUS': '=IF(Q{r}>=0, "PROFIT", "LOSS")',
