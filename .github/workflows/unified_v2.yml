@@ -308,6 +308,7 @@ jobs:
               python3 fetch_holdings.py
               bash combined_main_run.sh
               bash combined_home_run.sh
+              python3 ALL_OLD_GTT_INS_BACKUP.py
               echo "::endgroup::"
             else
               echo "::notice::action=$ACTION has no chain; exiting."
