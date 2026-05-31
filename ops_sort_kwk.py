@@ -25,8 +25,10 @@ def copy_columns(sheet, src_col_start, src_col_end, dst_col_start, dst_col_end, 
     src_range = f"{src_col_start}1:{src_col_end}{nrows}"
     dst_range = f"{dst_col_start}1:{dst_col_end}{nrows}"
     values = sheet.get_values(src_range)
+    sheet.batch_clear([dst_range])
+    print(f"Cleared {dst_range}")
     if values:
-        sheet.update(range_name = dst_range, values = values, value_input_option='USER_ENTERED')
+        sheet.update(range_name=dst_range, values=values, value_input_option='USER_ENTERED')
         print(f"Copied {src_range} → {dst_range} ({len(values)} rows)")
 
 def central_buy_update(action_sheet, special_target_sheet, filter_col_letter="O", dest_col_letter="J", uncheck=False):
