@@ -52,9 +52,9 @@ def central_buy_update(action_sheet, special_target_sheet, filter_col_letter="O"
         ]
 
     if filtered_rows:
-        special_target_sheet.update(
-            f"{dest_col_letter}2:{dest_col_letter}{len(filtered_rows)+1}",
-            filtered_rows,
+        target_range = f"{dest_col_letter}2:{dest_col_letter}{len(filtered_rows)+1}"
+        special_target_sheet.batch_update(
+            [{"range": target_range, "values": filtered_rows}],
             value_input_option='USER_ENTERED'
         )
         print(f"Copied {len(filtered_rows)} BUY rows to {special_target_sheet.title}.{dest_col_letter}")
