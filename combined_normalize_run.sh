@@ -1,1 +1,5 @@
-zerodha_tick_size;  fetch_all_gtts ;fetch_holdings; bash combined_main_run.sh; bash combined_home_run.sh;
+python3 zerodha_tick_size.py;  
+python3 fetch_all_gtts.py;
+python3 fetch_holdings.py; 
+bash combined_main_run.sh; 
+bash combined_home_run.sh;
