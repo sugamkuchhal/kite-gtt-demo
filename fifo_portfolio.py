@@ -267,11 +267,11 @@ def main():
         df_data = df_data if isinstance(df_data, pd.DataFrame) else pd.DataFrame(df_data)
 
         if df_data.empty:
-            ws.update([["(no data)"]])
+            ws.update(values=[["(no data)"]])
             return
 
         upload_values = [[safe_value(cell) for cell in row] for row in df_data.itertuples(index=False, name=None)]
-        ws.update([df_data.columns.values.tolist()] + upload_values, value_input_option='USER_ENTERED')
+        ws.update(values=[df_data.columns.values.tolist()] + upload_values, value_input_option='USER_ENTERED')
 
         if apply_formulas:
             row_count = len(df_data) + 1
