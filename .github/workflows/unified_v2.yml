@@ -291,6 +291,7 @@ jobs:
               bash combined_feeder.sh
               python3 set_field_false.py
               python3 fetch_all_gtts.py
+              python3 fifo_portfolio.py
               python3 fetch_holdings.py
               bash combined_main_run.sh
               bash combined_home_run.sh
@@ -302,7 +303,8 @@ jobs:
               bash combined_feeder.sh
               python3 set_field_false.py
               python3 fetch_all_gtts.py
-              bash combined_order_portfolio_run.sh
+              bash combined_order_fetch_append.sh
+              python3 fifo_portfolio.py
               python3 fetch_holdings.py
               bash combined_main_run.sh
               bash combined_home_run.sh
