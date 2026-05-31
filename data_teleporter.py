@@ -75,7 +75,7 @@ def gsheet_update(ws, rng, values, value_input_option="USER_ENTERED", retries=MA
     last = None
     for attempt in range(1, retries + 1):
         try:
-            ws.update(rng, values, value_input_option=value_input_option)
+            ws.update(range_name=rng, values=values, value_input_option=value_input_option)
             return
         except Exception as e:
             last = e
@@ -234,7 +234,7 @@ def batch_overwrite_rows(client: gspread.client.Client, sheet_id: str, sheet_nam
             chunk_end = indices[s_idx + len(chunk_rows) - 1]
             rng = f"A{chunk_start}:{last_col}{chunk_end}"
             try:
-                ws.update(rng, chunk_rows, value_input_option="USER_ENTERED")
+                ws.update(range_name=rng, values=chunk_rows, value_input_option="USER_ENTERED")
             except Exception as e:
                 log(f"[ERROR] overwrite {rng} failed: {e}")
                 raise
@@ -291,7 +291,7 @@ def copy_formulas_hi_where_blank(client: gspread.client.Client, sheet_id: str, s
                 write_any = True
         if write_any:
             try:
-                ws.update(rng, rows_to_write, value_input_option="USER_ENTERED")
+                ws.update(range_name=rng, values=rows_to_write, value_input_option="USER_ENTERED")
             except Exception as e:
                 log(f"[ERROR] write formulas {rng} failed: {e}")
                 raise
