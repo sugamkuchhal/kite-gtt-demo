@@ -209,13 +209,13 @@ def process_and_update():
                 if batch:
                     indices, rows_block = zip(*batch)
                     start, end = indices[0], indices[-1]
-                    ws_new.update(f"A{start}:F{end}", list(rows_block))
+                    ws_new.update(range_name=f"A{start}:F{end}", values=list(rows_block))
                 batch = [(idx, vals)]
             prev_idx = idx
         if batch:
             indices, rows_block = zip(*batch)
             start, end = indices[0], indices[-1]
-            ws_new.update(f"A{start}:G{end}", list(rows_block))
+            ws_new.update(range_name=f"A{start}:G{end}", values=list(rows_block))
 
     # 6. BATCH APPEND
     if to_append:
