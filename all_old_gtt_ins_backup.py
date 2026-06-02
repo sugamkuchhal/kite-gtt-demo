@@ -46,22 +46,38 @@ def _max_column_count(rows):
     return max((len(row) for row in rows), default=1)
 
 
+def _ensure_worksheet_size(worksheet, rows, cols):
+    """Grow a worksheet when needed so batch copy ranges fit."""
+    target_rows = max(rows, worksheet.row_count)
+    target_cols = max(cols, worksheet.col_count)
+    if target_rows != worksheet.row_count or target_cols != worksheet.col_count:
+        logging.info(
+            "Resizing %s to %s rows x %s columns.",
+            worksheet.title,
+            target_rows,
+            target_cols,
+        )
+        worksheet.resize(rows=target_rows, cols=target_cols)
+
+
 def backup_all_old_gtt_ins(ref_sheets=REF_SHEETS, source_tab=SOURCE_TAB, backup_tab=BACKUP_TAB):
     """
     Copy ALL_OLD_GTT_INS data rows to ALL_OLD_GTT_INS_BACKUP as static values.
 
     The backup sheet's header row is preserved. All backup contents from row 2
     onward are cleared across the worksheet's columns before source rows from row
-    2 onward are written back using RAW value input, which keeps copied formula
-    results as values instead of formulas.
+    2 onward are copied with Google Sheets' native PASTE_FORMAT and PASTE_VALUES
+    operations. That keeps formula results as typed values while also carrying
+    source number/date formats, so values do not get converted into text values
+    prefixed with an apostrophe or displayed with stale backup formatting.
     """
     sheet_id = resolve_sheet_id(ref_sheets)
     client = get_gsheet_client()
     spreadsheet = client.open_by_key(sheet_id)
 
     source_ws = spreadsheet.worksheet(source_tab)
-    source_values = source_ws.get_all_values(value_render_option="FORMATTED_VALUE")
-    data_rows = source_values[DATA_START_ROW - 1:]
+    source_values = source_ws.get_all_values(value_render_option="UNFORMATTED_VALUE")
+    data_row_count = max(len(source_values) - HEADER_ROW, 0)
     source_col_count = _max_column_count(source_values)
 
     backup_rows = max(DEFAULT_BACKUP_ROWS, len(source_values), DATA_START_ROW)
@@ -71,6 +87,7 @@ def backup_all_old_gtt_ins(ref_sheets=REF_SHEETS, source_tab=SOURCE_TAB, backup_
         rows=str(backup_rows),
         cols=str(source_col_count),
     )
+    _ensure_worksheet_size(backup_ws, backup_rows, source_col_count)
 
     clear_col_count = max(backup_ws.col_count, source_col_count, 1)
     clear_end_col = _column_number_to_letter(clear_col_count)
@@ -79,22 +96,53 @@ def backup_all_old_gtt_ins(ref_sheets=REF_SHEETS, source_tab=SOURCE_TAB, backup_
     logging.info("Clearing %s!%s", backup_tab, clear_range)
     backup_ws.batch_clear([clear_range])
 
-    if data_rows:
+    if data_row_count:
         logging.info(
-            "Copying %s data rows from %s to %s as values.",
-            len(data_rows),
+            "Copying %s data rows from %s to %s as native Sheets values.",
+            data_row_count,
             source_tab,
             backup_tab,
         )
-        backup_ws.update(
-            range_name=f"A{DATA_START_ROW}",
-            values=data_rows,
-            value_input_option="RAW",
+        source_range = {
+            "sheetId": source_ws.id,
+            "startRowIndex": DATA_START_ROW - 1,
+            "endRowIndex": DATA_START_ROW - 1 + data_row_count,
+            "startColumnIndex": 0,
+            "endColumnIndex": source_col_count,
+        }
+        destination_range = {
+            "sheetId": backup_ws.id,
+            "startRowIndex": DATA_START_ROW - 1,
+            "endRowIndex": DATA_START_ROW - 1 + data_row_count,
+            "startColumnIndex": 0,
+            "endColumnIndex": source_col_count,
+        }
+        spreadsheet.batch_update(
+            {
+                "requests": [
+                    {
+                        "copyPaste": {
+                            "source": source_range,
+                            "destination": destination_range,
+                            "pasteType": "PASTE_FORMAT",
+                            "pasteOrientation": "NORMAL",
+                        }
+                    },
+                    {
+                        "copyPaste": {
+                            "source": source_range,
+                            "destination": destination_range,
+                            "pasteType": "PASTE_VALUES",
+                            "pasteOrientation": "NORMAL",
+                        }
+                    },
+                ]
+            }
         )
     else:
         logging.info("No data rows found in %s from row %s onward.", source_tab, DATA_START_ROW)
 
-    return len(data_rows)
+    return data_row_count
 
 
 def main():
