@@ -100,6 +100,12 @@
       "type": "BASE",
       "sheet-id": "143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE",
       "sheet-name": "Algo Master Ticker Sheet"
+    },
+    {
+      "ref-sheets": "SARAS",
+      "type": "SARAS",
+      "sheet-id": "1tPSxvZtC7TsnBV4_NTmFtXu7TqavwCy0ndCmia7f0mg",
+      "sheet-name": "SARAS"
     }
   ]
 }
