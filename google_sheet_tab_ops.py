@@ -300,6 +300,39 @@ def get_service_account_email() -> str:
     return credentials.service_account_email
 
 
+def format_sheet_target(sheet_id_or_ref: str, spreadsheet_id: str) -> str:
+    """Describe the requested sheet target for errors and logs."""
+    if spreadsheet_id == sheet_id_or_ref:
+        return spreadsheet_id
+    return f"{spreadsheet_id} (resolved from {sheet_id_or_ref!r})"
+
+
+def open_spreadsheet_or_exit(client, sheet_id_or_ref: str, spreadsheet_id: str):
+    """Open a spreadsheet, or exit with an actionable access message."""
+    from gspread.exceptions import SpreadsheetNotFound
+
+    try:
+        return client.open_by_key(spreadsheet_id)
+    except PermissionError as exc:
+        service_account_email = get_service_account_email()
+        target = format_sheet_target(sheet_id_or_ref, spreadsheet_id)
+        raise SystemExit(
+            "Google Sheets permission denied while opening spreadsheet "
+            f"{target}. Share this Google Sheet with the service account "
+            f"{service_account_email!r} as an editor, then rerun the command. "
+            "If it is already shared, verify that the workflow is using the "
+            "same creds.json/service account you shared with."
+        ) from exc
+    except SpreadsheetNotFound as exc:
+        target = format_sheet_target(sheet_id_or_ref, spreadsheet_id)
+        raise SystemExit(
+            "Google spreadsheet not found while opening "
+            f"{target}. Check that --sheet-id is a valid raw spreadsheet ID "
+            "or a ref_sheets.json key, and that the authenticated service "
+            "account has access to it."
+        ) from exc
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Fill formulas, hard-copy values, and set a date cell in a Google Sheet tab.",
@@ -464,7 +497,7 @@ def main() -> None:
     spreadsheet_id = resolve_spreadsheet_id(args.sheet_id)
     if spreadsheet_id != args.sheet_id:
         print(f"Resolved --sheet-id {args.sheet_id!r} to spreadsheet ID from ref_sheets.json.")
-    spreadsheet = client.open_by_key(spreadsheet_id)
+    spreadsheet = open_spreadsheet_or_exit(client, args.sheet_id, spreadsheet_id)
     sheet = spreadsheet.worksheet(args.tab)
 
     if needs_row_operation:
