@@ -14,7 +14,8 @@ Supported operations:
 
 Authentication uses the same service-account credentials path as the rest of
 this repository (runtime_paths.get_creds_path()). Share the target Google Sheet
-with that service-account email before running this script.
+with that service-account email before running this script. The --sheet-id value
+may be either a raw Google spreadsheet ID/key or a ref_sheets key such as SARAS.
 """
 
 from __future__ import annotations
@@ -273,6 +274,22 @@ def set_cell_value(sheet, cell: str | None, value: str | None) -> None:
     sheet.update(cell, [[value]], value_input_option="USER_ENTERED")
 
 
+def resolve_spreadsheet_id(sheet_id_or_ref: str) -> str:
+    """Resolve a raw spreadsheet ID or repository ref_sheets key to a sheet ID.
+
+    Most repository scripts accept short keys from ref_sheets.json, such as
+    ``SARAS``. Keep that same behavior here while preserving support for raw
+    Google spreadsheet IDs: unknown keys are returned unchanged so gspread can
+    open them directly and report any access/not-found errors.
+    """
+    from ref_sheets_utils import resolve_sheet_id
+
+    try:
+        return resolve_sheet_id(sheet_id_or_ref)
+    except ValueError:
+        return sheet_id_or_ref
+
+
 def get_service_account_email() -> str:
     """Return the service-account email used for authentication."""
     from oauth2client.service_account import ServiceAccountCredentials
@@ -292,6 +309,8 @@ def build_parser() -> argparse.ArgumentParser:
             Notes:
               - Argument order does not matter. argparse reads options by name.
               - --sheet-id and --tab are required for sheet operations.
+              - --sheet-id accepts either a raw Google spreadsheet ID/key or a
+                ref_sheets key from ref_sheets.json, such as SARAS.
               - Formula copy, hard copy, and date update are independent. Provide only
                 the operation arguments you need.
               - Multiple columns can be sent in one run as comma-separated values,
@@ -322,7 +341,13 @@ def build_parser() -> argparse.ArgumentParser:
             """
         ),
     )
-    parser.add_argument("--sheet-id", help="Google spreadsheet ID/key. Required unless using --print-service-account.")
+    parser.add_argument(
+        "--sheet-id",
+        help=(
+            "Google spreadsheet ID/key or ref_sheets key (for example SARAS). "
+            "Required unless using --print-service-account."
+        ),
+    )
     parser.add_argument("--tab", help="Worksheet/tab name inside the spreadsheet. Required unless using --print-service-account.")
     parser.add_argument(
         "--formula-columns",
@@ -436,7 +461,10 @@ def main() -> None:
     from google_sheets_utils import get_gsheet_client
 
     client = get_gsheet_client()
-    spreadsheet = client.open_by_key(args.sheet_id)
+    spreadsheet_id = resolve_spreadsheet_id(args.sheet_id)
+    if spreadsheet_id != args.sheet_id:
+        print(f"Resolved --sheet-id {args.sheet_id!r} to spreadsheet ID from ref_sheets.json.")
+    spreadsheet = client.open_by_key(spreadsheet_id)
     sheet = spreadsheet.worksheet(args.tab)
 
     if needs_row_operation:
