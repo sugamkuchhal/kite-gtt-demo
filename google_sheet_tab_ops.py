@@ -3,14 +3,16 @@
 Run common Google Sheets tab maintenance operations.
 
 Supported operations:
-1. Formula copy: for each selected column, copy formulas and formatting from
-   --start-row through that column's last non-empty row (or --end-row when
-   supplied), then paste them one row down.
-2. Hard copy: for each selected column, copy calculated values from --start-row
-   through that column's last non-empty row (or --end-row when supplied), then
-   paste them one row down and make the destination format match the source
-   format.
+1. Hard copy: for each selected column, copy calculated values from --start-row
+   through the selected end row, then paste them one row down and make the
+   destination format match the source format.
+2. Formula copy: for each selected column, copy formulas and formatting from
+   --start-row through the selected end row, then paste them one row down.
 3. Date update: set a specific A1 cell to a supplied date/value.
+
+When --end-row is omitted, the selected end row is detected once from column A
+and reused for every formula/hard-copy column. Hard copy runs before formula
+copy when both operations are requested.
 
 Authentication uses the same service-account credentials path as the rest of
 this repository (runtime_paths.get_creds_path()). Share the target Google Sheet
@@ -141,11 +143,11 @@ def detect_last_non_empty_row_in_column(sheet, column: ColumnRef) -> int:
     return 0
 
 
-def get_column_end_row(sheet, column: ColumnRef, explicit_end_row: int | None) -> int:
-    """Return the explicit end row, or detect it independently for the column."""
+def determine_operation_end_row(sheet, explicit_end_row: int | None) -> int:
+    """Return the explicit end row, or detect it once from column A."""
     if explicit_end_row is not None:
         return explicit_end_row
-    return detect_last_non_empty_row_in_column(sheet, column)
+    return detect_last_non_empty_row_in_column(sheet, ColumnRef(name="A", index=1, letter="A"))
 
 
 def make_grid_range(sheet_id: int, start_row: int, end_row: int, col_index: int) -> dict:
@@ -164,28 +166,28 @@ def fill_formulas_down(
     sheet,
     columns: Iterable[ColumnRef],
     start_row: int,
-    explicit_end_row: int | None = None,
+    end_row: int,
 ) -> list[RowCopyResult]:
     """
     Copy formulas and cell formatting one row down for each selected column.
 
-    Each column gets its own end row. For example, with the default
-    ``--start-row 4``, column A ending at row 100, and column C ending at row
-    80, the source ranges are A4:A100 and C4:C80 and the destination ranges are
-    A5:A101 and C5:C81. Google Sheets copyPaste requests are used so relative
-    references are adjusted the same way a manual copy/paste would adjust them
-    in the UI. The formula paste is followed by a format paste so fonts, colors,
-    number formats, borders, and similar cell formatting are preserved from the
-    source rows.
+    All columns use the same end row. When ``--end-row`` is omitted, that end
+    row is detected once from column A before this function is called. For
+    example, with the default ``--start-row 4`` and end row 100, the source
+    ranges are A4:A100 and C4:C100 and the destination ranges are A5:A101 and
+    C5:C101. Google Sheets copyPaste requests are used so relative references
+    are adjusted the same way a manual copy/paste would adjust them in the UI.
+    The formula paste is followed by a format paste so fonts, colors, number
+    formats, borders, and similar cell formatting are preserved from the source
+    rows.
     """
     requests = []
     results: list[RowCopyResult] = []
 
-    for col in columns:
-        end_row = get_column_end_row(sheet, col, explicit_end_row)
-        if end_row < start_row:
-            continue
+    if end_row < start_row:
+        return results
 
+    for col in columns:
         destination_start_row = start_row + 1
         destination_end_row = end_row + 1
         source = make_grid_range(sheet.id, start_row, end_row, col.index)
@@ -215,27 +217,27 @@ def hard_copy_values(
     sheet,
     columns: Iterable[ColumnRef],
     start_row: int,
-    explicit_end_row: int | None = None,
+    end_row: int,
 ) -> list[RowCopyResult]:
     """
     Copy each selected column range's calculated values and formatting one row down.
 
-    Each column gets its own end row. For example, with the default
-    ``--start-row 4``, column B ending at row 100, and column D ending at row
-    80, values are read from B4:B100 and D4:D80 and written to B5:B101 and
-    D5:D81. Source formatting is also copied to B5:B101 and D5:D81, so the
-    destination format matches the source format while formulas are replaced by
-    hard-coded calculated values.
+    All columns use the same end row. When ``--end-row`` is omitted, that end
+    row is detected once from column A before this function is called. For
+    example, with the default ``--start-row 4`` and end row 100, values are read
+    from B4:B100 and D4:D100 and written to B5:B101 and D5:D101. Source
+    formatting is also copied to B5:B101 and D5:D101, so the destination format
+    matches the source format while formulas are replaced by hard-coded
+    calculated values.
     """
     format_requests = []
     updates = []
     results: list[RowCopyResult] = []
 
-    for col in columns:
-        end_row = get_column_end_row(sheet, col, explicit_end_row)
-        if end_row < start_row:
-            continue
+    if end_row < start_row:
+        return results
 
+    for col in columns:
         destination_start_row = start_row + 1
         destination_end_row = end_row + 1
         source_range = f"{col.letter}{start_row}:{col.letter}{end_row}"
@@ -335,7 +337,7 @@ def open_spreadsheet_or_exit(client, sheet_id_or_ref: str, spreadsheet_id: str):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Fill formulas, hard-copy values, and set a date cell in a Google Sheet tab.",
+        description="Hard-copy values, fill formulas, and set a date cell in a Google Sheet tab.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(
             """
@@ -344,17 +346,18 @@ def build_parser() -> argparse.ArgumentParser:
               - --sheet-id and --tab are required for sheet operations.
               - --sheet-id accepts either a raw Google spreadsheet ID/key or a
                 ref_sheets key from ref_sheets.json, such as SARAS.
-              - Formula copy, hard copy, and date update are independent. Provide only
-                the operation arguments you need.
+              - Hard copy, formula copy, and date update are independent. Provide only
+                the operation arguments you need. When both row operations are
+                requested, hard copy runs before formula copy.
               - Multiple columns can be sent in one run as comma-separated values,
                 for example A,C,F. You can also repeat the same column option.
-              - Row operations are applied independently per selected column:
-                for each column, copy from --start-row through that column's
-                last non-empty row and paste one row down. If --end-row is
-                supplied, it overrides per-column detection for every column.
-              - Formula copy preserves formatting by copying formulas first and
-                then copying the source row format. Hard copy writes calculated
-                values first and then copies the source format to the destination.
+              - Row operations use one shared end row for every selected column:
+                if --end-row is supplied, that value is used; otherwise the last
+                non-empty row is detected once from column A.
+              - Hard copy writes calculated values first and then copies the
+                source format to the destination. Formula copy preserves
+                formatting by copying formulas first and then copying the source
+                row format.
 
             Examples:
               Formula copy only, with multiple columns in one argument:
@@ -411,8 +414,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help=(
-            "Optional last source row to copy. When omitted, the last source row is detected separately "
-            "for each selected column; destination ends at that column's next row."
+            "Optional last source row to copy. When omitted, the last source row is "
+            "detected once from column A and reused for every selected column."
         ),
     )
     parser.add_argument(
@@ -504,15 +507,13 @@ def main() -> None:
         formula_refs = resolve_columns(sheet, formula_columns, args.header_row)
         hard_copy_refs = resolve_columns(sheet, hard_copy_columns, args.header_row)
 
-        formula_results = fill_formulas_down(spreadsheet, sheet, formula_refs, args.start_row, args.end_row)
-        hard_copy_results = hard_copy_values(spreadsheet, sheet, hard_copy_refs, args.start_row, args.end_row)
+        operation_end_row = determine_operation_end_row(sheet, args.end_row)
+        if args.end_row is None:
+            print(f"Detected row operation end row {operation_end_row} from column A.")
 
-        for result in formula_results:
-            print(
-                "Formula and formatting copy completed for column "
-                f"{result.column.letter} from rows {result.source_start_row}:{result.source_end_row} "
-                f"to rows {result.destination_start_row}:{result.destination_end_row}."
-            )
+        hard_copy_results = hard_copy_values(spreadsheet, sheet, hard_copy_refs, args.start_row, operation_end_row)
+        formula_results = fill_formulas_down(spreadsheet, sheet, formula_refs, args.start_row, operation_end_row)
+
         for result in hard_copy_results:
             print(
                 "Hard copy and formatting copy completed for column "
@@ -520,15 +521,19 @@ def main() -> None:
                 f"to rows {result.destination_start_row}:{result.destination_end_row}."
             )
 
-        skipped_columns = [
-            col.letter
-            for col in [*formula_refs, *hard_copy_refs]
-            if col.letter not in {result.column.letter for result in [*formula_results, *hard_copy_results]}
-        ]
-        if skipped_columns:
+        for result in formula_results:
+            print(
+                "Formula and formatting copy completed for column "
+                f"{result.column.letter} from rows {result.source_start_row}:{result.source_end_row} "
+                f"to rows {result.destination_start_row}:{result.destination_end_row}."
+            )
+
+        skipped_columns = [col.letter for col in [*hard_copy_refs, *formula_refs]]
+        if skipped_columns and operation_end_row < args.start_row:
             print(
                 "No row copy needed for columns "
-                f"{', '.join(skipped_columns)} because their detected end rows are before start row {args.start_row}."
+                f"{', '.join(skipped_columns)} because the selected end row {operation_end_row} "
+                f"is before start row {args.start_row}."
             )
 
     set_cell_value(sheet, args.date_cell, args.date_value)
