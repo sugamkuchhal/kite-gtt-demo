@@ -8,7 +8,7 @@ Supported operations:
    destination format match the source format.
 2. Formula copy: for each selected column, copy formulas and formatting from
    --start-row through the selected end row, then paste them one row down.
-3. Date update: set a specific A1 cell to a supplied date/value.
+3. Date update: set a specific A1 cell to today's date by default, or to a supplied date/value.
 
 When --end-row is omitted, the selected end row is detected once from column A
 and reused for every formula/hard-copy column. Hard copy runs before formula
@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import re
 import textwrap
+from datetime import date
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
@@ -267,13 +268,18 @@ def hard_copy_values(
     return results
 
 
-def set_cell_value(sheet, cell: str | None, value: str | None) -> None:
-    """Set a single cell when both --date-cell and --date-value are provided."""
-    if not cell and not value:
-        return
-    if not cell or value is None:
-        raise ValueError("Provide both --date-cell and --date-value, or neither.")
-    sheet.update(cell, [[value]], value_input_option="USER_ENTERED")
+def get_date_update_value(value: str | None) -> str:
+    """Return the explicit date/value, or today's ISO date when omitted."""
+    return value if value is not None else date.today().isoformat()
+
+
+def set_cell_value(sheet, cell: str | None, value: str | None) -> str | None:
+    """Set a single cell when --date-cell is provided. Defaults to today's date."""
+    if not cell:
+        return None
+    update_value = get_date_update_value(value)
+    sheet.update(cell, [[update_value]], value_input_option="USER_ENTERED")
+    return update_value
 
 
 def resolve_spreadsheet_id(sheet_id_or_ref: str) -> str:
@@ -348,7 +354,9 @@ def build_parser() -> argparse.ArgumentParser:
                 ref_sheets key from ref_sheets.json, such as SARAS.
               - Hard copy, formula copy, and date update are independent. Provide only
                 the operation arguments you need. When both row operations are
-                requested, hard copy runs before formula copy.
+                requested, hard copy runs before formula copy. If --date-cell is
+                provided without --date-value, today's date is written in ISO
+                format (YYYY-MM-DD).
               - Multiple columns can be sent in one run as comma-separated values,
                 for example A,C,F. You can also repeat the same column option.
               - Row operations use one shared end row for every selected column:
@@ -369,7 +377,10 @@ def build_parser() -> argparse.ArgumentParser:
               Hard copy only, with multiple columns in one argument:
                 python google_sheet_tab_ops.py --sheet-id SHEET_ID --tab TAB --hard-copy-columns H,I,J
 
-              Date cell only:
+              Date cell only, defaults to today:
+                python google_sheet_tab_ops.py --sheet-id SHEET_ID --tab TAB --date-cell B2
+
+              Date cell only, explicit value:
                 python google_sheet_tab_ops.py --sheet-id SHEET_ID --tab TAB --date-cell B2 --date-value 2026-06-05
 
               Formula copy + hard copy + date update, in any argument order:
@@ -427,7 +438,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--date-cell", help="A1 cell to update at the end, e.g. B2.")
     parser.add_argument(
         "--date-value",
-        help="Date/value to put in --date-cell. USER_ENTERED is used, so dates like 2026-06-05 are parsed by Sheets.",
+        help=(
+            "Optional date/value to put in --date-cell. When omitted, today's date is used. "
+            "USER_ENTERED is used, so dates like 2026-06-05 are parsed by Sheets."
+        ),
     )
     parser.add_argument(
         "--print-service-account",
@@ -468,7 +482,7 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser | No
 
     formula_columns = split_csv(args.formula_columns)
     hard_copy_columns = split_csv(args.hard_copy_columns)
-    has_date_update = args.date_cell or args.date_value is not None
+    has_date_update = bool(args.date_cell)
 
     if not formula_columns and not hard_copy_columns and not has_date_update:
         message = "Nothing to do. Provide --formula-columns, --hard-copy-columns, and/or --date-cell/--date-value."
@@ -476,8 +490,8 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser | No
             parser.error(message)
         raise ValueError(message)
 
-    if (args.date_cell and args.date_value is None) or (not args.date_cell and args.date_value is not None):
-        message = "Provide both --date-cell and --date-value for a date update, or neither."
+    if not args.date_cell and args.date_value is not None:
+        message = "Provide --date-cell when using --date-value."
         if parser:
             parser.error(message)
         raise ValueError(message)
@@ -536,9 +550,9 @@ def main() -> None:
                 f"is before start row {args.start_row}."
             )
 
-    set_cell_value(sheet, args.date_cell, args.date_value)
+    updated_date_value = set_cell_value(sheet, args.date_cell, args.date_value)
     if args.date_cell:
-        print(f"Set {args.date_cell} to {args.date_value}.")
+        print(f"Set {args.date_cell} to {updated_date_value}.")
 
 
 if __name__ == "__main__":
