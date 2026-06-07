@@ -288,6 +288,7 @@ jobs:
               echo "::group::RUN: EOD holiday chain"
               python3 zerodha_tick_size.py
               bash combined_fetcher.sh
+              python3 zerodha_tick_size.py
               bash combined_feeder.sh
               python3 set_field_false.py
               python3 fetch_all_gtts.py
@@ -300,6 +301,7 @@ jobs:
               echo "::group::RUN: EOD chain"
               python3 zerodha_tick_size.py
               bash combined_fetcher.sh
+              python3 zerodha_tick_size.py
               bash combined_feeder.sh
               python3 set_field_false.py
               python3 fetch_all_gtts.py
