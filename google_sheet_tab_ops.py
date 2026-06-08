@@ -8,7 +8,8 @@ Supported operations:
    destination format match the source format.
 2. Formula copy: for each selected column, copy formulas and formatting from
    --start-row through the selected end row, then paste them one row down.
-3. Date update: set a specific A1 cell to today's date by default, or to a supplied date/value.
+3. Row format copy: copy only formatting from one whole row to another row.
+4. Date update: set a specific A1 cell to today's date by default, or to a supplied date/value.
 
 When --end-row is omitted, the selected end row is detected once from column A
 and reused for every formula/hard-copy column. Hard copy runs before formula
@@ -268,6 +269,42 @@ def hard_copy_values(
     return results
 
 
+def make_row_grid_range(sheet_id: int, row: int, start_col: int, end_col: int) -> dict:
+    """Build a zero-indexed, end-exclusive GridRange for one row and a column span."""
+    return {
+        "sheetId": sheet_id,
+        "startRowIndex": row - 1,
+        "endRowIndex": row,
+        "startColumnIndex": start_col - 1,
+        "endColumnIndex": end_col,
+    }
+
+
+def copy_row_format(
+    spreadsheet,
+    sheet,
+    source_row: int,
+    destination_row: int,
+    start_col: int = 1,
+    end_col: int | None = None,
+) -> tuple[int, int, int, int]:
+    """Copy only cell formatting from one row to another row.
+
+    Values and formulas are left unchanged. By default, formatting is copied
+    across the worksheet's current column count.
+    """
+    effective_end_col = end_col if end_col is not None else sheet.col_count
+    request = {
+        "copyPaste": {
+            "source": make_row_grid_range(sheet.id, source_row, start_col, effective_end_col),
+            "destination": make_row_grid_range(sheet.id, destination_row, start_col, effective_end_col),
+            "pasteType": "PASTE_FORMAT",
+            "pasteOrientation": "NORMAL",
+        }
+    }
+    spreadsheet.batch_update({"requests": [request]})
+    return source_row, destination_row, start_col, effective_end_col
+
 def get_date_update_value(value: str | None) -> str:
     """Return the explicit date/value, or today's ISO date when omitted."""
     return value if value is not None else date.today().isoformat()
@@ -343,7 +380,7 @@ def open_spreadsheet_or_exit(client, sheet_id_or_ref: str, spreadsheet_id: str):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Hard-copy values, fill formulas, and set a date cell in a Google Sheet tab.",
+        description="Hard-copy values, fill formulas, copy row formatting, and set a date cell in a Google Sheet tab.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent(
             """
@@ -352,9 +389,11 @@ def build_parser() -> argparse.ArgumentParser:
               - --sheet-id and --tab are required for sheet operations.
               - --sheet-id accepts either a raw Google spreadsheet ID/key or a
                 ref_sheets key from ref_sheets.json, such as SARAS.
-              - Hard copy, formula copy, and date update are independent. Provide only
-                the operation arguments you need. When both row operations are
-                requested, hard copy runs before formula copy. If --date-cell is
+              - Hard copy, formula copy, row format copy, and date update are
+                independent. Provide only the operation arguments you need. When
+                both column-copy operations are requested, hard copy runs before
+                formula copy. Row format copy runs after those column operations.
+                If --date-cell is
                 provided without --date-value, today's date is written in ISO
                 format (YYYY-MM-DD).
               - Multiple columns can be sent in one run as comma-separated values,
@@ -376,6 +415,9 @@ def build_parser() -> argparse.ArgumentParser:
 
               Hard copy only, with multiple columns in one argument:
                 python google_sheet_tab_ops.py --sheet-id SHEET_ID --tab TAB --hard-copy-columns H,I,J
+
+              Row format copy only, such as row 6 formatting to row 5:
+                python google_sheet_tab_ops.py --sheet-id SHEET_ID --tab TAB --format-source-row 6 --format-destination-row 5
 
               Date cell only, defaults to today:
                 python google_sheet_tab_ops.py --sheet-id SHEET_ID --tab TAB --date-cell B2
@@ -435,6 +477,28 @@ def build_parser() -> argparse.ArgumentParser:
         default=1,
         help="Header row used when columns are supplied by name. Defaults to 1.",
     )
+    parser.add_argument(
+        "--format-source-row",
+        type=int,
+        help="Source row whose formatting should be copied without changing values/formulas.",
+    )
+    parser.add_argument(
+        "--format-destination-row",
+        type=int,
+        help="Destination row that should receive formatting from --format-source-row.",
+    )
+    parser.add_argument(
+        "--format-start-column",
+        type=int,
+        default=1,
+        help="First 1-based column included in row format copy. Defaults to 1 (column A).",
+    )
+    parser.add_argument(
+        "--format-end-column",
+        type=int,
+        default=None,
+        help="Last 1-based column included in row format copy. Defaults to the worksheet's column count.",
+    )
     parser.add_argument("--date-cell", help="A1 cell to update at the end, e.g. B2.")
     parser.add_argument(
         "--date-value",
@@ -483,9 +547,10 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser | No
     formula_columns = split_csv(args.formula_columns)
     hard_copy_columns = split_csv(args.hard_copy_columns)
     has_date_update = bool(args.date_cell)
+    has_row_format_copy = args.format_source_row is not None or args.format_destination_row is not None
 
-    if not formula_columns and not hard_copy_columns and not has_date_update:
-        message = "Nothing to do. Provide --formula-columns, --hard-copy-columns, and/or --date-cell/--date-value."
+    if not formula_columns and not hard_copy_columns and not has_date_update and not has_row_format_copy:
+        message = "Nothing to do. Provide --formula-columns, --hard-copy-columns, --format-source-row/--format-destination-row, and/or --date-cell/--date-value."
         if parser:
             parser.error(message)
         raise ValueError(message)
@@ -495,6 +560,28 @@ def validate_args(args: argparse.Namespace, parser: argparse.ArgumentParser | No
         if parser:
             parser.error(message)
         raise ValueError(message)
+
+    if has_row_format_copy:
+        if args.format_source_row is None or args.format_destination_row is None:
+            message = "Provide both --format-source-row and --format-destination-row for row format copy."
+            if parser:
+                parser.error(message)
+            raise ValueError(message)
+        if args.format_source_row < 1 or args.format_destination_row < 1:
+            message = "--format-source-row and --format-destination-row must be >= 1."
+            if parser:
+                parser.error(message)
+            raise ValueError(message)
+        if args.format_start_column < 1:
+            message = "--format-start-column must be >= 1."
+            if parser:
+                parser.error(message)
+            raise ValueError(message)
+        if args.format_end_column is not None and args.format_end_column < args.format_start_column:
+            message = "--format-end-column must be >= --format-start-column."
+            if parser:
+                parser.error(message)
+            raise ValueError(message)
 
 
 def main() -> None:
@@ -507,6 +594,7 @@ def main() -> None:
     formula_columns = split_csv(args.formula_columns)
     hard_copy_columns = split_csv(args.hard_copy_columns)
     needs_row_operation = bool(formula_columns or hard_copy_columns)
+    needs_row_format_copy = args.format_source_row is not None and args.format_destination_row is not None
 
     from google_sheets_utils import get_gsheet_client
 
@@ -549,6 +637,20 @@ def main() -> None:
                 f"{', '.join(skipped_columns)} because the selected end row {operation_end_row} "
                 f"is before start row {args.start_row}."
             )
+
+    if needs_row_format_copy:
+        source_row, destination_row, start_col, end_col = copy_row_format(
+            spreadsheet,
+            sheet,
+            args.format_source_row,
+            args.format_destination_row,
+            args.format_start_column,
+            args.format_end_column,
+        )
+        print(
+            "Row formatting copy completed from row "
+            f"{source_row} to row {destination_row} across columns {start_col}:{end_col}."
+        )
 
     updated_date_value = set_cell_value(sheet, args.date_cell, args.date_value)
     if args.date_cell:
