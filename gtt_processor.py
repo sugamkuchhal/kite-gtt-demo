@@ -33,7 +33,6 @@ import datetime
 import hashlib
 import random
 import socket
-import datetime
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
@@ -41,6 +40,89 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
 logger.info(f"Using BATCH_SIZE={BATCH_SIZE}")
+
+# --------------------------- API Helpers (defined early, used throughout) --------------------------
+
+def __is_retriable_exception(exc):
+    """
+    Heuristic to decide whether `exc` is a transient/retriable error.
+    - Looks for common substrings (429, quota, timeout, connection reset, recv failure, 5xx)
+    - Recognizes socket errors (connection reset) and HTTP/requests-like status_code attributes.
+    """
+    if exc is None:
+        return False
+
+    # If exception has HTTP/status code attribute and it's 5xx -> retriable
+    for attr in ("status_code", "code", "errno"):
+        try:
+            val = getattr(exc, attr, None)
+            if isinstance(val, int) and 500 <= val <= 599:
+                return True
+        except Exception:
+            pass
+
+    msg = ""
+    try:
+        msg = str(exc).lower()
+    except Exception:
+        msg = ""
+
+    # common transient indicators
+    transient_keywords = [
+        "429", "quota", "rate limit", "timeout", "timed out", "connection reset",
+        "connection aborted", "recv failure", "connection refused", "temporarily unavailable",
+        "502", "503", "504", "socket.timeout", "connectionreseterror"
+    ]
+    for kw in transient_keywords:
+        if kw in msg:
+            return True
+
+    # socket-level errors
+    if isinstance(exc, socket.timeout):
+        return True
+    # Some libs wrap socket errors; check repr
+    try:
+        if "connectionreseterror" in repr(exc).lower():
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
+def safe_api_call(func, *args, max_retries=5, base_delay=1, **kwargs):
+    """
+    Execute API call with robust exponential backoff + jitter retry.
+    - Retries on rate-limits, timeouts, connection resets, and HTTP 5xx-like errors.
+    - max_retries default increased to 5 for increased resilience.
+    """
+    attempt = 0
+    while attempt < max_retries:
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            attempt += 1
+            retriable = __is_retriable_exception(e)
+            # Always retry on retriable errors (up to max_retries), otherwise re-raise immediately.
+            if not retriable:
+                # If it's a KiteException with nested status or recognizable retryable form, double-check
+                # otherwise treat as fatal and raise.
+                raise e
+
+            if attempt >= max_retries:
+                # reached retry budget — raise the last exception
+                logger.error(f"API call failed after {attempt} attempts: {e}")
+                raise e
+
+            # exponential backoff with jitter
+            delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1)
+            logger.warning(f"Transient error on API call (attempt {attempt}/{max_retries}): {e}. Retrying in {delay:.2f}s")
+            time.sleep(delay)
+            continue
+
+    # Shouldn't reach here, but return None defensively
+    return None
+
 
 # --------------------------- Extracted Functions --------------------------
 
@@ -123,7 +205,7 @@ def process_update(
         
         try:
             old_units = int(matched_row.get("UNITS", 0) or 0)
-        except:
+        except (ValueError, TypeError):
             old_units = 0
 
         old_price = float(matched_row.get("GTT PRICE", 0) or 0)
@@ -374,38 +456,6 @@ def parse_type_to_side(raw_type):
         return "BUY"
     return "SELL"
 
-def safe_api_call(func, *args, max_retries=5, base_delay=1, **kwargs):
-    """
-    Execute API call with robust exponential backoff + jitter retry.
-    - Retries on rate-limits, timeouts, connection resets, and HTTP 5xx-like errors.
-    - max_retries default increased to 5 for increased resilience.
-    """
-    attempt = 0
-    while attempt < max_retries:
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            attempt += 1
-            retriable = __is_retriable_exception(e)
-            # Always retry on retriable errors (up to max_retries), otherwise re-raise immediately.
-            if not retriable:
-                # If it's a KiteException with nested status or recognizable retryable form, double-check
-                # otherwise treat as fatal and raise.
-                raise e
-
-            if attempt >= max_retries:
-                # reached retry budget — raise the last exception
-                logger.error(f"API call failed after {attempt} attempts: {e}")
-                raise e
-
-            # exponential backoff with jitter
-            delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1)
-            logger.warning(f"Transient error on API call (attempt {attempt}/{max_retries}): {e}. Retrying in {delay:.2f}s")
-            time.sleep(delay)
-            continue
-
-    # Shouldn't reach here, but return None defensively
-    return None
 
 class SheetStatusManager:
     def __init__(self, sheet):
@@ -617,51 +667,6 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
             update_status(status_manager, row_num, f"❌ error: {e}")
             logger.error(f"Row {row_num}: error placing MARKET order: {e}")
 
-def __is_retriable_exception(exc):
-    """
-    Heuristic to decide whether `exc` is a transient/retriable error.
-    - Looks for common substrings (429, quota, timeout, connection reset, recv failure, 5xx)
-    - Recognizes socket errors (connection reset) and HTTP/requests-like status_code attributes.
-    """
-    if exc is None:
-        return False
-
-    # If exception has HTTP/status code attribute and it's 5xx -> retriable
-    for attr in ("status_code", "code", "errno"):
-        try:
-            val = getattr(exc, attr, None)
-            if isinstance(val, int) and 500 <= val <= 599:
-                return True
-        except Exception:
-            pass
-
-    msg = ""
-    try:
-        msg = str(exc).lower()
-    except Exception:
-        msg = ""
-
-    # common transient indicators
-    transient_keywords = [
-        "429", "quota", "rate limit", "timeout", "timed out", "connection reset",
-        "connection aborted", "recv failure", "connection refused", "temporarily unavailable",
-        "502", "503", "504", "socket.timeout", "connectionreseterror"
-    ]
-    for kw in transient_keywords:
-        if kw in msg:
-            return True
-
-    # socket-level errors
-    if isinstance(exc, socket.timeout):
-        return True
-    # Some libs wrap socket errors; check repr
-    try:
-        if "connectionreseterror" in repr(exc).lower():
-            return True
-    except Exception:
-        pass
-
-    return False
 
 def main(instruction_sheet=None, data_sheet=None, kite=None):
     """
