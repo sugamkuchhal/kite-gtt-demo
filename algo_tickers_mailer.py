@@ -26,7 +26,7 @@ SMTP_TOKEN_FILE = str(get_smtp_token_path())
 # Config (constants)
 # ==========================
 ref_sheets = "TICKER"
-tab_name = "Check"
+tab_name = "Checklist"
 CHECKLIST_URL = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE/edit?gid=844019911"
 SERVICE_CREDS = str(get_creds_path())
 
