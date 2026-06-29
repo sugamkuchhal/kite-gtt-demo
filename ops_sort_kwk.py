@@ -63,7 +63,7 @@ def central_buy_update(action_sheet, special_target_sheet, filter_col_letter="O"
     else:
         print("⚠️ No rows with BUY found.")
 
-def mkt_kwk_ops_sort_email(
+def mkt_kwk_ops_sort(
     main_ref_sheets,
     kwk_sheet_name,
     action_sheet_name,
@@ -118,7 +118,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        mkt_kwk_ops_sort_email(
+        mkt_kwk_ops_sort(
             main_ref_sheets=args.ref_sheets,
             kwk_sheet_name=args.kwk_sheet,
             action_sheet_name=args.action_sheet,
