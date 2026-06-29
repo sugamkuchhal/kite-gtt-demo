@@ -14,7 +14,7 @@ import os
 import urllib.request
 import urllib.parse
 
-from runtime_paths import get_creds_path, get_smtp_token_path
+from runtime_paths import get_creds_path, get_smtp_token_path, get_telegram_token_path
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -41,7 +41,7 @@ SMTP_USER = "sugamkuchhal@gmail.com"
 
 # Telegram settings
 TELEGRAM_CHAT_ID = "182871861"
-TELEGRAM_TOKEN_FILE = str(get_smtp_token_path()).replace("smtp_token.json", "telegram_token.json")
+TELEGRAM_TOKEN_FILE = str(get_telegram_token_path())
 
 # ==========================
 # Helpers

@@ -72,3 +72,7 @@ def get_access_token_path() -> Path:
 
 def get_smtp_token_path() -> Path:
     return resolve_path("smtp_token.json", env_vars=("SMTP_TOKEN_PATH",))
+
+
+def get_telegram_token_path() -> Path:
+    return resolve_path("telegram_token.json", env_vars=("TELEGRAM_TOKEN_PATH",))
