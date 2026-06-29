@@ -170,7 +170,7 @@ def format_checklist_email(rows, subject_date):
         html.append('<p style="font-family:Arial,Helvetica,sans-serif; font-size:13px; margin-bottom:4px; color:#999;"><b>Inactive checks with data</b></p>')
         html.append(_make_table(inactive_flagged, grey=True))
 
-    return "\n".join(html)
+    return "\n".join(html), bool(active_flagged)
 
 def send_via_smtp(from_email, to_list, subject, html_body, smtp_server, smtp_port, smtp_user, smtp_password):
     logging.info("Sending via SMTP server %s:%s as user %s", smtp_server, smtp_port, smtp_user)
@@ -218,7 +218,11 @@ def main():
     logging.info("Recipients: %s", ", ".join(recipients))
     logging.info("Total rows read from Check sheet: %d", len(data))
 
-    html_body = format_checklist_email(data, subject_date)
+    html_body, has_active = format_checklist_email(data, subject_date)
+
+    if not has_active:
+        logging.info("No active flagged checks — skipping email.")
+        return
 
     # try to load saved token first
     smtp_password = load_smtp_token()
