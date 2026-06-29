@@ -11,6 +11,8 @@ import smtplib
 import getpass
 import json
 import os
+import urllib.request
+import urllib.parse
 
 from runtime_paths import get_creds_path, get_smtp_token_path
 from ref_sheets_utils import resolve_sheet_id
@@ -36,6 +38,10 @@ FROM_EMAIL = "sugamkuchhal@gmail.com"
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
 SMTP_USER = "sugamkuchhal@gmail.com"
+
+# Telegram settings
+TELEGRAM_CHAT_ID = "182871861"
+TELEGRAM_TOKEN_FILE = str(get_smtp_token_path()).replace("smtp_token.json", "telegram_token.json")
 
 # ==========================
 # Helpers
@@ -69,6 +75,70 @@ def save_smtp_token(smtp_password, path=SMTP_TOKEN_FILE):
         os.chmod(path, 0o600)
     except Exception:
         pass
+
+def load_telegram_token(path=TELEGRAM_TOKEN_FILE):
+    """Return stored Telegram bot token, or None if file missing/invalid."""
+    try:
+        if not os.path.exists(path):
+            return None
+        with open(path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        tok = data.get("telegram_token")
+        return tok if tok else None
+    except Exception:
+        return None
+
+def save_telegram_token(token, path=TELEGRAM_TOKEN_FILE):
+    """Save Telegram bot token to JSON file with minimal permissions."""
+    data = {"telegram_token": token}
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(data, fh)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+    try:
+        os.chmod(path, 0o600)
+    except Exception:
+        pass
+
+def format_telegram_message(active_flagged, inactive_flagged, subject_date):
+    """Build a Telegram-compatible HTML message (bold, italic, links only)."""
+    lines = []
+    lines.append(f"<b>ALGO CHECKLIST {subject_date}</b>")
+    lines.append(f'<a href="{CHECKLIST_URL}">View Checklist Sheet →</a>')
+    lines.append("")
+
+    if active_flagged:
+        lines.append("<b>Active flagged checks:</b>")
+        for check, sheet, tab, count in active_flagged:
+            lines.append(f"• {check} — {tab} — <b>{count}</b>")
+    else:
+        lines.append("No active checks flagged.")
+
+    if inactive_flagged:
+        lines.append("")
+        lines.append("<i>Inactive checks with data:</i>")
+        for check, sheet, tab, count in inactive_flagged:
+            lines.append(f"• {check} — {tab} — {count}")
+
+    return "\n".join(lines)
+
+def send_via_telegram(bot_token, chat_id, text):
+    """Send a message via Telegram Bot API using stdlib only."""
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = urllib.parse.urlencode({
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+        "disable_web_page_preview": "true",
+    }).encode()
+    req = urllib.request.Request(url, data=payload, method="POST")
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        result = json.loads(resp.read())
+    if not result.get("ok"):
+        raise RuntimeError(f"Telegram API error: {result}")
+    logging.info("Telegram message sent successfully.")
 
 def read_sheet(sheet_id, tab_name, service_creds):
     logging.info("Authenticating to Google Sheets with service account: %s", service_creds)
@@ -170,7 +240,7 @@ def format_checklist_email(rows, subject_date):
         html.append('<p style="font-family:Arial,Helvetica,sans-serif; font-size:13px; margin-bottom:4px; color:#999;"><b>Inactive checks with data</b></p>')
         html.append(_make_table(inactive_flagged, grey=True))
 
-    return "\n".join(html), bool(active_flagged)
+    return "\n".join(html), bool(active_flagged), active_flagged, inactive_flagged
 
 def send_via_smtp(from_email, to_list, subject, html_body, smtp_server, smtp_port, smtp_user, smtp_password):
     logging.info("Sending via SMTP server %s:%s as user %s", smtp_server, smtp_port, smtp_user)
@@ -218,10 +288,10 @@ def main():
     logging.info("Recipients: %s", ", ".join(recipients))
     logging.info("Total rows read from Check sheet: %d", len(data))
 
-    html_body, has_active = format_checklist_email(data, subject_date)
+    html_body, has_active, active_flagged, inactive_flagged = format_checklist_email(data, subject_date)
 
     if not has_active:
-        logging.info("No active flagged checks — skipping email.")
+        logging.info("No active flagged checks — skipping email and Telegram.")
         return
 
     # try to load saved token first
@@ -247,6 +317,26 @@ def main():
     except Exception as e:
         logging.exception("Failed to send email: %s", e)
         sys.exit(1)
+
+    # Telegram
+    telegram_token = load_telegram_token()
+    if not telegram_token:
+        telegram_token = getpass.getpass("Enter Telegram bot token: ")
+        if telegram_token:
+            try:
+                save_telegram_token(telegram_token)
+                logging.info("Saved Telegram token to %s (permission 600).", TELEGRAM_TOKEN_FILE)
+            except Exception as e:
+                logging.warning("Could not save Telegram token: %s", e)
+
+    if telegram_token:
+        try:
+            tg_text = format_telegram_message(active_flagged, inactive_flagged, subject_date)
+            send_via_telegram(telegram_token, TELEGRAM_CHAT_ID, tg_text)
+        except Exception as e:
+            logging.warning("Telegram send failed (non-fatal): %s", e)
+    else:
+        logging.warning("No Telegram token available — skipping Telegram.")
 
 
 if __name__ == "__main__":

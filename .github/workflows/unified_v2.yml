@@ -228,14 +228,17 @@ jobs:
         env:
           CREDS_JSON: ${{ secrets.CREDS_JSON }}
           SMTP_TOKEN_JSON: ${{ secrets.SMTP_TOKEN_JSON }}
+          TELEGRAM_TOKEN_JSON: ${{ secrets.TELEGRAM_TOKEN_JSON }}
         run: |
           set -euo pipefail
           MACDIR="/Users/sugamkuchhal/Documents/kite-gtt-demo"
           sudo mkdir -p "$MACDIR" || true
           [ -n "$CREDS_JSON" ] && printf '%s' "$CREDS_JSON" > creds.json
           [ -n "$SMTP_TOKEN_JSON" ] && printf '%s' "$SMTP_TOKEN_JSON" > smtp_token.json
+          [ -n "$TELEGRAM_TOKEN_JSON" ] && printf '%s' "$TELEGRAM_TOKEN_JSON" > telegram_token.json
           [ -n "$CREDS_JSON" ] && printf '%s' "$CREDS_JSON" | sudo tee "$MACDIR/creds.json" >/dev/null || true
           [ -n "$SMTP_TOKEN_JSON" ] && printf '%s' "$SMTP_TOKEN_JSON" | sudo tee "$MACDIR/smtp_token.json" >/dev/null || true
+          [ -n "$TELEGRAM_TOKEN_JSON" ] && printf '%s' "$TELEGRAM_TOKEN_JSON" | sudo tee "$MACDIR/telegram_token.json" >/dev/null || true
           ls -l creds.json smtp_token.json api_key.txt access_token.txt || true
 
       - name: Run unified modes (script/refresh/midday/eod/auto)
