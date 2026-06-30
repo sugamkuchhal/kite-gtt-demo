@@ -1,11 +1,12 @@
 name: Unified Script Runner v2
 
 on:
-  # NOTE: GitHub cron uses UTC. Each cron below is the UTC equivalent of intended IST time.
-  schedule:
-    - cron: "0,30 4-9 * * 1-5"   # 09:30–15:00 IST every 30 mins, Mon–Fri
-    - cron: "0 11 * * 1-5"       # 16:30 IST, Mon–Fri
-    - cron: "0,30 3 * * *"       # 08:30,09:00 IST (all days)
+
+  #schedule:
+    #- cron: "0,30 4-9 * * 1-5"
+    #- cron: "0 11 * * 1-5"
+    #- cron: "0,30 3 * * *"
+
   workflow_dispatch:
     inputs:
       script:
@@ -56,12 +57,10 @@ jobs:
           HOLIDAY_FILE="holidays.txt"
           IS_HOLIDAY=false
 
-          # Mark holidays for scheduled runs; EOD can use a dedicated holiday chain.
-          if [ "$EVENT_NAME" = "schedule" ] && [ -f "$HOLIDAY_FILE" ]; then
-            if grep -Fxq "$TODAY" "$HOLIDAY_FILE"; then
-              IS_HOLIDAY=true
-              echo "::notice::Holiday detected ($TODAY)"
-            fi
+          # Check holidays for ANY trigger type, not just schedule
+          if [ -f "$HOLIDAY_FILE" ] && grep -Fxq "$TODAY" "$HOLIDAY_FILE"; then
+            IS_HOLIDAY=true
+            echo "::notice::Holiday detected ($TODAY)"
           fi
           
           ACTION="none"
@@ -72,7 +71,14 @@ jobs:
           
           # 2. Manual mode (explicit)
           elif [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$MODE_VAL" != "SELECT" ]; then
-            ACTION="$MODE_VAL"
+            if [ "$MODE_VAL" = "midday" ] && [ "$IS_HOLIDAY" = "true" ]; then
+              ACTION="none"
+              echo "::notice::Holiday ($TODAY) → skipping midday run"
+            elif [ "$MODE_VAL" = "eod" ] && [ "$IS_HOLIDAY" = "true" ]; then
+              ACTION="eod_holiday"
+            else
+              ACTION="$MODE_VAL"
+            fi
           
           # 3. Scheduled run → map known cron expressions to action
           elif [ "$EVENT_NAME" = "schedule" ]; then
