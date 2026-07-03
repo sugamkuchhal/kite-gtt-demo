@@ -291,7 +291,7 @@ jobs:
               python3 set_field_false.py
               python3 fetch_all_gtts.py
               python3 fetch_all_orders.py
-              bash combined_home_run_mini.sh
+              bash combined_home_run_midday.sh
               echo "::endgroup::"
             elif [ "$ACTION" = "eod_holiday" ]; then
               echo "::group::RUN: EOD holiday chain"
