@@ -11,11 +11,13 @@ import smtplib
 import getpass
 import json
 import os
+import subprocess
 import time
 import urllib.request
 import urllib.parse
+from html import escape as _esc
 
-from runtime_paths import get_creds_path, get_smtp_token_path, get_telegram_token_path
+from runtime_paths import get_creds_path, get_smtp_token_path, get_telegram_token_path, repo_root
 from ref_sheets_utils import resolve_sheet_id
 from removals_processor import run_removals
 
@@ -34,12 +36,16 @@ tab_name = "Checklist"
 CHECKLIST_URL = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE/edit?gid=844019911"
 SERVICE_CREDS = str(get_creds_path())
 
-# Removals integration: REMOVALS!B1 (same TICKER sheet) holds the count of
-# tickers currently flagged "CAN REMOVE NOW". When > 0, the mailer runs the
-# removals processor, waits for the sheet formulas to heal, re-reads the
-# checklist, and sends a single combined before/removals/after email.
+# Healing framework: each healer has a numeric trigger cell ("signal")
+# maintained by sheet formulas. When any signal > 0, the mailer runs the
+# triggered healers, waits for formulas to heal, re-reads the checklist,
+# and sends a single combined before/healing/after email.
 REMOVALS_TAB = "REMOVALS"
-REMOVALS_HEAL_WAIT_SECS = 60
+REMOVALS_SIGNAL_CELL = "B1"          # count of tickers flagged CAN REMOVE NOW
+NORMALIZE_SIGNAL_CELL = "D1"         # on the Checklist tab; SUMPRODUCT trigger
+NORMALIZE_SCRIPT = "combined_normalize_run.sh"
+HEAL_WAIT_SECS = 60
+HEALER_LOG_TAIL = 10                 # log lines per healer shown in comms
 
 
 # Email / SMTP settings
@@ -251,64 +257,101 @@ def format_checklist_email(rows, subject_date):
 
     return "\n".join(html), bool(active_flagged), active_flagged, inactive_flagged
 
-def read_removals_count(sheet_id, service_creds):
-    """Read REMOVALS!B1 — the count of tickers flagged CAN REMOVE NOW."""
+# ==========================
+# Healing framework
+#
+# Each healer is a pure actuator with a numeric trigger cell on the
+# sheet ("signal"). When any signal > 0, the mailer runs the triggered
+# healers in registry order, waits for the sheet formulas to heal,
+# re-reads the checklist, and sends ONE combined email/Telegram:
+# checklist before -> one section per healer (its log lines) ->
+# checklist after. The combined message always sends, even on failure.
+# Only the last HEALER_LOG_TAIL log lines per healer go to comms; full
+# logs remain in the console (GitHub Actions log).
+# ==========================
+
+def read_signal_cell(sheet_id, tab, cell, service_creds):
+    """Read a numeric healing-trigger cell. Non-numeric/blank -> 0."""
     scope = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
     creds = Credentials.from_service_account_file(service_creds, scopes=scope)
     client = gspread.authorize(creds)
-    ws = client.open_by_key(sheet_id).worksheet(REMOVALS_TAB)
-    raw = ws.acell("B1").value
+    ws = client.open_by_key(sheet_id).worksheet(tab)
+    raw = ws.acell(cell).value
     try:
-        count = int(str(raw).strip())
+        val = float(str(raw).replace(",", "").strip())
     except (TypeError, ValueError):
-        count = 0
-    logging.info("REMOVALS!B1 = %r -> count %d", raw, count)
-    return count
+        val = 0.0
+    logging.info("Healing signal %s!%s = %r -> %s", tab, cell, raw, val)
+    return val
 
 
-def format_removals_html(result):
-    """Render the removals-run result dict as an HTML section."""
-    base_td = 'border:1px solid #ddd; padding:8px;'
-    TH = 'style="border:1px solid #ccc; padding:8px; text-align:left; background:#f2f2f2;"'
+class _ListLogHandler(logging.Handler):
+    """Captures log records into a list (used to collect healer logs)."""
+    def __init__(self, sink):
+        super().__init__()
+        self.sink = sink
 
-    html = []
-    if result.get("error"):
-        html.append(f'<p style="font-family:Arial,Helvetica,sans-serif; color:#c00;">'
-                    f'<b>Removals FAILED:</b> {result["error"]}</p>')
-        return "\n".join(html)
+    def emit(self, record):
+        try:
+            self.sink.append(self.format(record))
+        except Exception:
+            pass
 
-    removed = result.get("removed", [])
-    if not removed:
-        html.append('<p style="font-family:Arial,Helvetica,sans-serif; color:#555;">'
-                    'No tickers were flagged CAN REMOVE NOW at execution time.</p>')
-        return "\n".join(html)
 
-    html.append(f'<p style="font-family:Arial,Helvetica,sans-serif; font-size:13px;">'
-                f'Removed from REMOVALS list: <b>{", ".join(removed)}</b></p>')
+def run_removals_healer():
+    """Run the removals processor, capturing its log output as the report."""
+    lines = []
+    handler = _ListLogHandler(lines)
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    root = logging.getLogger()
+    root.addHandler(handler)
+    try:
+        result = run_removals()
+    finally:
+        root.removeHandler(handler)
+    error = bool(result.get("error")) or any(
+        t.get("error") for t in result.get("tabs", [])
+    )
+    return lines, error
 
-    html.append('<table style="border-collapse:collapse; width:100%; font-family: Arial, Helvetica, sans-serif; margin-bottom:16px;">')
-    html.append("<thead><tr>")
-    for h in ["Feed Tab", "Purged", "Tickers", "Not Found", "Status"]:
-        html.append(f'<th {TH}>{h}</th>')
-    html.append("</tr></thead><tbody>")
 
-    for tab in result.get("tabs", []):
-        if tab.get("error"):
-            row_style = "background:#fde8e8;"  # red tint
-            status = f"ERROR: {tab['error']}"
-        else:
-            row_style = "background:#e8f5e9;"  # green tint
-            status = "OK"
-        html.append(f'<tr style="{row_style}">')
-        html.append(f'<td style="{base_td}">{tab["tab"]}</td>')
-        html.append(f'<td style="{base_td} text-align:right; font-weight:bold;">{tab["purged"]}</td>')
-        html.append(f'<td style="{base_td}">{", ".join(tab["purged_tickers"]) or "—"}</td>')
-        html.append(f'<td style="{base_td}">{", ".join(tab["not_found"]) or "—"}</td>')
-        html.append(f'<td style="{base_td}">{status}</td>')
-        html.append("</tr>")
+def run_normalize_healer():
+    """Run combined_normalize_run.sh, streaming output to console and
+    capturing it as the report. Non-zero exit code -> error."""
+    lines = []
+    logging.info("Launching %s ...", NORMALIZE_SCRIPT)
+    proc = subprocess.Popen(
+        ["bash", NORMALIZE_SCRIPT],
+        cwd=str(repo_root()),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    for line in proc.stdout:
+        line = line.rstrip("\n")
+        print(line, flush=True)  # live in the Actions console
+        lines.append(line)
+    rc = proc.wait()
+    lines.append(f"exit code: {rc}")
+    logging.info("%s finished with exit code %d.", NORMALIZE_SCRIPT, rc)
+    return lines, rc != 0
 
-    html.append("</tbody></table>")
-    return "\n".join(html)
+
+HEALERS = [
+    {
+        "name": "Removals",
+        "detect": lambda sheet_id: read_signal_cell(
+            sheet_id, REMOVALS_TAB, REMOVALS_SIGNAL_CELL, SERVICE_CREDS) > 0,
+        "run": run_removals_healer,
+    },
+    {
+        "name": "Normalize",
+        "detect": lambda sheet_id: read_signal_cell(
+            sheet_id, tab_name, NORMALIZE_SIGNAL_CELL, SERVICE_CREDS) > 0,
+        "run": run_normalize_healer,
+    },
+]
 
 
 def _section_title(text):
@@ -316,41 +359,44 @@ def _section_title(text):
             f'margin:18px 0 6px 0; border-bottom:2px solid #444;"><b>{text}</b></p>')
 
 
-def format_combined_email(html_before, removals_result, html_after):
-    """Single email body: checklist before, removals report, checklist after."""
+def format_healer_html(result):
+    """Render one healer result {name, lines, error} as an HTML fragment."""
+    tail = result["lines"][-HEALER_LOG_TAIL:]
+    hidden = len(result["lines"]) - len(tail)
+    if result["error"]:
+        status = '<span style="color:#c00; font-weight:bold;">FAILED</span>'
+    else:
+        status = '<span style="color:#2e7d32; font-weight:bold;">OK</span>'
+
     html = []
-    html.append(_section_title("1. Checklist — before removals"))
+    html.append(f'<p style="font-family:Arial,Helvetica,sans-serif; font-size:13px;">Status: {status}</p>')
+    if hidden > 0:
+        html.append(f'<p style="font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#999;">'
+                    f'... {hidden} earlier log line(s) omitted — full logs in the run console.</p>')
+    body = _esc("\n".join(tail)) if tail else "(no log output)"
+    html.append(f'<pre style="background:#f6f6f6; border:1px solid #ddd; padding:10px; '
+                f'font-size:12px; white-space:pre-wrap;">{body}</pre>')
+    return "\n".join(html)
+
+
+def format_combined_email(html_before, healer_results, html_after):
+    """Single email body: checklist before, healer sections, checklist after."""
+    html = []
+    html.append(_section_title("1. Checklist — before healing"))
     html.append(html_before)
-    html.append(_section_title("2. Removals executed"))
-    html.append(format_removals_html(removals_result))
-    html.append(_section_title("3. Checklist — after removals"))
+    n = 2
+    for result in healer_results:
+        html.append(_section_title(f"{n}. Healing — {result['name']}"))
+        html.append(format_healer_html(result))
+        n += 1
+    html.append(_section_title(f"{n}. Checklist — after healing"))
     html.append(html_after)
     return "\n".join(html)
 
 
-def format_removals_telegram_lines(result):
-    """Compact removals summary lines for Telegram."""
-    lines = []
-    if result.get("error"):
-        lines.append(f"⚠️ <b>Removals FAILED:</b> {result['error']}")
-        return lines
-    removed = result.get("removed", [])
-    if not removed:
-        lines.append("No tickers flagged at execution time.")
-        return lines
-    lines.append(f"Removed: <b>{', '.join(removed)}</b>")
-    for tab in result.get("tabs", []):
-        if tab.get("error"):
-            lines.append(f"• {tab['tab']} — ⚠️ ERROR: {tab['error']}")
-        else:
-            extra = f" (not found: {', '.join(tab['not_found'])})" if tab["not_found"] else ""
-            lines.append(f"• {tab['tab']} — purged <b>{tab['purged']}</b>{extra}")
-    return lines
-
-
-def format_combined_telegram(before, removals_result, after, subject_date):
+def format_combined_telegram(before, healer_results, after, subject_date):
     """
-    Single Telegram message: checklist before, removals report, checklist after.
+    Single Telegram message: checklist before, healer reports, checklist after.
     `before`/`after` are (active_flagged, inactive_flagged) tuples.
     """
     def _checklist_lines(label, active):
@@ -365,12 +411,16 @@ def format_combined_telegram(before, removals_result, after, subject_date):
     lines = []
     lines.append(f"<b>ALGO CHECKLIST {subject_date}</b>")
     lines.append(f'<a href="{CHECKLIST_URL}">View Checklist Sheet →</a>')
-    lines.extend(_checklist_lines("Before removals", before[0]))
-    lines.append("")
-    lines.append("<b>Removals executed:</b>")
-    lines.extend(format_removals_telegram_lines(removals_result))
-    lines.extend(_checklist_lines("After removals", after[0]))
+    lines.extend(_checklist_lines("Before healing", before[0]))
+    for result in healer_results:
+        status = "⚠️ FAILED" if result["error"] else "OK"
+        lines.append("")
+        lines.append(f"<b>Healing — {result['name']}:</b> {status}")
+        for l in result["lines"][-HEALER_LOG_TAIL:]:
+            lines.append(_esc(l))
+    lines.extend(_checklist_lines("After healing", after[0]))
     return "\n".join(lines)
+
 
 
 def send_via_smtp(from_email, to_list, subject, html_body, smtp_server, smtp_port, smtp_user, smtp_password):
@@ -421,24 +471,46 @@ def main():
 
     html_before, has_active, active_flagged, inactive_flagged = format_checklist_email(data, subject_date)
 
-    removals_count = read_removals_count(sheet_id, SERVICE_CREDS)
+    # Healing detection: each healer reads its own signal cell. A detection
+    # failure is reported as a failed healer (visible in the combined email)
+    # rather than silently skipped.
+    healer_results = []
+    triggered = []
+    for healer in HEALERS:
+        try:
+            if healer["detect"](sheet_id):
+                triggered.append(healer)
+        except Exception as e:
+            logging.exception("Healer '%s' detection failed: %s", healer["name"], e)
+            healer_results.append({
+                "name": healer["name"],
+                "lines": [f"Detection failed: {e}"],
+                "error": True,
+            })
 
-    if removals_count > 0:
-        # Removals cycle: actuate -> wait for formulas to heal -> re-read
-        # checklist -> send ONE combined email (always, even on failure).
-        logging.info("Removals flagged (count=%d) — invoking removals processor.", removals_count)
-        removals_result = run_removals()
+    if triggered or healer_results:
+        # Healing cycle: run triggered healers in registry order, wait for
+        # sheet formulas to heal, re-read the checklist, and send ONE
+        # combined email (always, even on failure).
+        for healer in triggered:
+            logging.info("Healing: running '%s' ...", healer["name"])
+            try:
+                lines, error = healer["run"]()
+            except Exception as e:
+                logging.exception("Healer '%s' crashed: %s", healer["name"], e)
+                lines, error = [f"Healer crashed: {e}"], True
+            healer_results.append({"name": healer["name"], "lines": lines, "error": error})
 
-        logging.info("Waiting %d seconds for sheet formulas to heal...", REMOVALS_HEAL_WAIT_SECS)
-        time.sleep(REMOVALS_HEAL_WAIT_SECS)
+        logging.info("Waiting %d seconds for sheet formulas to heal...", HEAL_WAIT_SECS)
+        time.sleep(HEAL_WAIT_SECS)
 
         rows_after = read_sheet(sheet_id, tab_name, SERVICE_CREDS)
         html_after, _, active_after, inactive_after = format_checklist_email(rows_after[1:], subject_date)
 
-        html_body = format_combined_email(html_before, removals_result, html_after)
+        html_body = format_combined_email(html_before, healer_results, html_after)
         tg_text = format_combined_telegram(
             (active_flagged, inactive_flagged),
-            removals_result,
+            healer_results,
             (active_after, inactive_after),
             subject_date,
         )
