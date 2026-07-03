@@ -11,11 +11,13 @@ import smtplib
 import getpass
 import json
 import os
+import time
 import urllib.request
 import urllib.parse
 
 from runtime_paths import get_creds_path, get_smtp_token_path
 from ref_sheets_utils import resolve_sheet_id
+from removals_processor import run_removals
 
 import atexit
 from script_logger import log_start, log_end
@@ -31,6 +33,13 @@ ref_sheets = "TICKER"
 tab_name = "Checklist"
 CHECKLIST_URL = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE/edit?gid=844019911"
 SERVICE_CREDS = str(get_creds_path())
+
+# Removals integration: REMOVALS!B1 (same TICKER sheet) holds the count of
+# tickers currently flagged "CAN REMOVE NOW". When > 0, the mailer runs the
+# removals processor, waits for the sheet formulas to heal, re-reads the
+# checklist, and sends a single combined before/removals/after email.
+REMOVALS_TAB = "REMOVALS"
+REMOVALS_HEAL_WAIT_SECS = 60
 
 
 # Email / SMTP settings
@@ -242,6 +251,128 @@ def format_checklist_email(rows, subject_date):
 
     return "\n".join(html), bool(active_flagged), active_flagged, inactive_flagged
 
+def read_removals_count(sheet_id, service_creds):
+    """Read REMOVALS!B1 — the count of tickers flagged CAN REMOVE NOW."""
+    scope = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+    creds = Credentials.from_service_account_file(service_creds, scopes=scope)
+    client = gspread.authorize(creds)
+    ws = client.open_by_key(sheet_id).worksheet(REMOVALS_TAB)
+    raw = ws.acell("B1").value
+    try:
+        count = int(str(raw).strip())
+    except (TypeError, ValueError):
+        count = 0
+    logging.info("REMOVALS!B1 = %r -> count %d", raw, count)
+    return count
+
+
+def format_removals_html(result):
+    """Render the removals-run result dict as an HTML section."""
+    base_td = 'border:1px solid #ddd; padding:8px;'
+    TH = 'style="border:1px solid #ccc; padding:8px; text-align:left; background:#f2f2f2;"'
+
+    html = []
+    if result.get("error"):
+        html.append(f'<p style="font-family:Arial,Helvetica,sans-serif; color:#c00;">'
+                    f'<b>Removals FAILED:</b> {result["error"]}</p>')
+        return "\n".join(html)
+
+    removed = result.get("removed", [])
+    if not removed:
+        html.append('<p style="font-family:Arial,Helvetica,sans-serif; color:#555;">'
+                    'No tickers were flagged CAN REMOVE NOW at execution time.</p>')
+        return "\n".join(html)
+
+    html.append(f'<p style="font-family:Arial,Helvetica,sans-serif; font-size:13px;">'
+                f'Removed from REMOVALS list: <b>{", ".join(removed)}</b></p>')
+
+    html.append('<table style="border-collapse:collapse; width:100%; font-family: Arial, Helvetica, sans-serif; margin-bottom:16px;">')
+    html.append("<thead><tr>")
+    for h in ["Feed Tab", "Purged", "Tickers", "Not Found", "Status"]:
+        html.append(f'<th {TH}>{h}</th>')
+    html.append("</tr></thead><tbody>")
+
+    for tab in result.get("tabs", []):
+        if tab.get("error"):
+            row_style = "background:#fde8e8;"  # red tint
+            status = f"ERROR: {tab['error']}"
+        else:
+            row_style = "background:#e8f5e9;"  # green tint
+            status = "OK"
+        html.append(f'<tr style="{row_style}">')
+        html.append(f'<td style="{base_td}">{tab["tab"]}</td>')
+        html.append(f'<td style="{base_td} text-align:right; font-weight:bold;">{tab["purged"]}</td>')
+        html.append(f'<td style="{base_td}">{", ".join(tab["purged_tickers"]) or "—"}</td>')
+        html.append(f'<td style="{base_td}">{", ".join(tab["not_found"]) or "—"}</td>')
+        html.append(f'<td style="{base_td}">{status}</td>')
+        html.append("</tr>")
+
+    html.append("</tbody></table>")
+    return "\n".join(html)
+
+
+def _section_title(text):
+    return (f'<p style="font-family:Arial,Helvetica,sans-serif; font-size:14px; '
+            f'margin:18px 0 6px 0; border-bottom:2px solid #444;"><b>{text}</b></p>')
+
+
+def format_combined_email(html_before, removals_result, html_after):
+    """Single email body: checklist before, removals report, checklist after."""
+    html = []
+    html.append(_section_title("1. Checklist — before removals"))
+    html.append(html_before)
+    html.append(_section_title("2. Removals executed"))
+    html.append(format_removals_html(removals_result))
+    html.append(_section_title("3. Checklist — after removals"))
+    html.append(html_after)
+    return "\n".join(html)
+
+
+def format_removals_telegram_lines(result):
+    """Compact removals summary lines for Telegram."""
+    lines = []
+    if result.get("error"):
+        lines.append(f"⚠️ <b>Removals FAILED:</b> {result['error']}")
+        return lines
+    removed = result.get("removed", [])
+    if not removed:
+        lines.append("No tickers flagged at execution time.")
+        return lines
+    lines.append(f"Removed: <b>{', '.join(removed)}</b>")
+    for tab in result.get("tabs", []):
+        if tab.get("error"):
+            lines.append(f"• {tab['tab']} — ⚠️ ERROR: {tab['error']}")
+        else:
+            extra = f" (not found: {', '.join(tab['not_found'])})" if tab["not_found"] else ""
+            lines.append(f"• {tab['tab']} — purged <b>{tab['purged']}</b>{extra}")
+    return lines
+
+
+def format_combined_telegram(before, removals_result, after, subject_date):
+    """
+    Single Telegram message: checklist before, removals report, checklist after.
+    `before`/`after` are (active_flagged, inactive_flagged) tuples.
+    """
+    def _checklist_lines(label, active):
+        out = ["", f"<b>{label}:</b>"]
+        if active:
+            for check, sheet, tab, count in active:
+                out.append(f"• {check} — {tab} — <b>{count}</b>")
+        else:
+            out.append("No active checks flagged.")
+        return out
+
+    lines = []
+    lines.append(f"<b>ALGO CHECKLIST {subject_date}</b>")
+    lines.append(f'<a href="{CHECKLIST_URL}">View Checklist Sheet →</a>')
+    lines.extend(_checklist_lines("Before removals", before[0]))
+    lines.append("")
+    lines.append("<b>Removals executed:</b>")
+    lines.extend(format_removals_telegram_lines(removals_result))
+    lines.extend(_checklist_lines("After removals", after[0]))
+    return "\n".join(lines)
+
+
 def send_via_smtp(from_email, to_list, subject, html_body, smtp_server, smtp_port, smtp_user, smtp_password):
     logging.info("Sending via SMTP server %s:%s as user %s", smtp_server, smtp_port, smtp_user)
     msg = MIMEMultipart("alternative")
@@ -288,11 +419,35 @@ def main():
     logging.info("Recipients: %s", ", ".join(recipients))
     logging.info("Total rows read from Check sheet: %d", len(data))
 
-    html_body, has_active, active_flagged, inactive_flagged = format_checklist_email(data, subject_date)
+    html_before, has_active, active_flagged, inactive_flagged = format_checklist_email(data, subject_date)
 
-    if not has_active:
-        logging.info("No active flagged checks — skipping email and Telegram.")
-        return
+    removals_count = read_removals_count(sheet_id, SERVICE_CREDS)
+
+    if removals_count > 0:
+        # Removals cycle: actuate -> wait for formulas to heal -> re-read
+        # checklist -> send ONE combined email (always, even on failure).
+        logging.info("Removals flagged (count=%d) — invoking removals processor.", removals_count)
+        removals_result = run_removals()
+
+        logging.info("Waiting %d seconds for sheet formulas to heal...", REMOVALS_HEAL_WAIT_SECS)
+        time.sleep(REMOVALS_HEAL_WAIT_SECS)
+
+        rows_after = read_sheet(sheet_id, tab_name, SERVICE_CREDS)
+        html_after, _, active_after, inactive_after = format_checklist_email(rows_after[1:], subject_date)
+
+        html_body = format_combined_email(html_before, removals_result, html_after)
+        tg_text = format_combined_telegram(
+            (active_flagged, inactive_flagged),
+            removals_result,
+            (active_after, inactive_after),
+            subject_date,
+        )
+    else:
+        if not has_active:
+            logging.info("No active flagged checks — skipping email and Telegram.")
+            return
+        html_body = html_before
+        tg_text = format_telegram_message(active_flagged, inactive_flagged, subject_date)
 
     # try to load saved token first
     smtp_password = load_smtp_token()
@@ -331,7 +486,6 @@ def main():
 
     if telegram_token:
         try:
-            tg_text = format_telegram_message(active_flagged, inactive_flagged, subject_date)
             send_via_telegram(telegram_token, TELEGRAM_CHAT_ID, tg_text)
         except Exception as e:
             logging.warning("Telegram send failed (non-fatal): %s", e)
