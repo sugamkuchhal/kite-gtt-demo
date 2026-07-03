@@ -19,7 +19,8 @@ from html import escape as _esc
 
 from runtime_paths import get_creds_path, get_smtp_token_path, get_telegram_token_path, repo_root
 from ref_sheets_utils import resolve_sheet_id
-from removals_processor import run_removals
+from remover_old_tickers import run_removals
+from remover_profitable_sip_reg import run_sip_reg
 
 import atexit
 from script_logger import log_start, log_end
@@ -43,6 +44,9 @@ SERVICE_CREDS = str(get_creds_path())
 REMOVALS_TAB = "REMOVALS"
 REMOVALS_SIGNAL_CELL = "B1"          # count of tickers flagged CAN REMOVE NOW
 NORMALIZE_SIGNAL_CELL = "D1"         # on the Checklist tab; SUMPRODUCT trigger
+SIP_SIGNAL_REF = "KWK"               # profitable SIP REG signal lives on the KWK sheet
+SIP_SIGNAL_TAB = "OLD_SIP_REG_List"
+SIP_SIGNAL_CELL = "Q1"
 NORMALIZE_SCRIPT = "combined_normalize_run.sh"
 HEAL_WAIT_SECS = 60
 HEALER_LOG_TAIL = 10                 # log lines per healer shown in comms
@@ -315,6 +319,20 @@ def run_removals_healer():
     return lines, error
 
 
+def run_sip_reg_healer():
+    """Run the profitable SIP REG remover, capturing its log output."""
+    lines = []
+    handler = _ListLogHandler(lines)
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    root = logging.getLogger()
+    root.addHandler(handler)
+    try:
+        result = run_sip_reg()
+    finally:
+        root.removeHandler(handler)
+    return lines, bool(result.get("error"))
+
+
 def run_normalize_healer():
     """Run combined_normalize_run.sh, streaming output to console and
     capturing it as the report. Non-zero exit code -> error."""
@@ -344,6 +362,13 @@ HEALERS = [
         "detect": lambda sheet_id: read_signal_cell(
             sheet_id, REMOVALS_TAB, REMOVALS_SIGNAL_CELL, SERVICE_CREDS) > 0,
         "run": run_removals_healer,
+    },
+    {
+        "name": "Profitable SIP REG",
+        "detect": lambda sheet_id: read_signal_cell(
+            resolve_sheet_id(SIP_SIGNAL_REF), SIP_SIGNAL_TAB,
+            SIP_SIGNAL_CELL, SERVICE_CREDS) > 0,
+        "run": run_sip_reg_healer,
     },
     {
         "name": "Normalize",

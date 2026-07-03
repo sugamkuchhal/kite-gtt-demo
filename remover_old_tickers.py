@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-removals_processor.py
+remover_old_tickers.py
 
 Pure sheet actuator for the removals process — no email/Telegram here;
 comms are owned by algo_tickers_mailer.py, which imports run_removals().
@@ -227,7 +227,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
     from script_logger import log_start, log_end
-    ctx = log_start("removals_processor")
+    ctx = log_start("remover_old_tickers")
     try:
         result = run_removals()
     finally:
