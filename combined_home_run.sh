@@ -1,9 +1,5 @@
 
-python3 gtt_processor.py --ref-sheets "PORTFOLIO" --sheet-name "DEL_GTT_INS"
-python3 gtt_processor.py --ref-sheets "PORTFOLIO" --sheet-name "INS_GTT_INS"
-python3 gtt_processor.py --ref-sheets "PORTFOLIO" --sheet-name "GTT_INS"
-python3 gtt_processor.py --ref-sheets "PORTFOLIO" --sheet-name "ALTER_GTT_INS"
-python3 gtt_processor.py --ref-sheets "PORTFOLIO" --sheet-name "INS_GTT_INS"
+bash combined_home_run_eod.sh
 
 python3 algo_tickers_mailer.py --emails "sugam.kuchhal.iimc@gmail.com"
 python3 algo_winners_mailer.py --emails "sugam.kuchhal.iimc@gmail.com,sharma.virat@gmail.com"
