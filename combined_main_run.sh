@@ -41,4 +41,6 @@ python3 ops_sort.py --ref-sheets "RTP" --green-tab "GTT_List" --red-tab "Old_GTT
 # echo "Running: Consolidated BreakOut"
 # python3 ops_sort.py --sheet-name="SARAS D M B - Consolidated BreakOut with BOH" --green-tab="MKT_List" --red-tab="OLD_MKT_List" --yellow-tab="Action_List"
 
+python3 ops_sort.py --ref-sheets "PORTFOLIO" --green-tab "Mailing_List" --red-tab "Old_Mailing_List" --yellow-tab "Action_Mailing_List" --loose-update
+
 echo "✅ All tasks completed."
