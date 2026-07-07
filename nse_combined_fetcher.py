@@ -146,6 +146,12 @@ class NSEBaseFetcher:
                     getattr(ticker, "fast_info", {}) and ticker.fast_info.get("last_price")
                 ) or info.get("regularMarketPrice") or info.get("previousClose")
 
+            # An all-blank response (no price AND empty info) is Yahoo
+            # rate-limiting us, not real data. Raise so the backoff/retry
+            # wrapper engages instead of writing an empty row as "success".
+            if current_price is None and not info:
+                raise RuntimeError("empty Yahoo response (likely rate-limited)")
+
             result = {
                 "Symbol": symbol,  # keep NSE: prefix here everywhere
                 "Company_Name": info.get("longName") if info.get("longName") is not None else "",
@@ -208,6 +214,33 @@ class NSEBaseFetcher:
                     logger.error(f"Unexpected error for {sym}: {e}")
                     self.failed_symbols.append(sym)
         logger.info(f"Fetch complete. Success: {len(self.stock_data)}, Failed: {len(self.failed_symbols)}")
+
+        # Second pass: failed symbols are usually rate-limit victims, not
+        # bad tickers. After a cooldown, retry them once, single-threaded
+        # and slower, so Yahoo's throttle has relaxed.
+        if self.failed_symbols:
+            cooldown = 60
+            logger.info(f"Second pass: retrying {len(self.failed_symbols)} failed "
+                        f"symbol(s) after {cooldown}s cooldown (single-threaded)...")
+            time.sleep(cooldown)
+            still_failed = []
+            for sym in tqdm(self.failed_symbols, desc="Second pass..."):
+                try:
+                    r = self._fetch_with_backoff(sym)
+                except Exception as e:
+                    logger.error(f"Second-pass unexpected error for {sym}: {e}")
+                    r = None
+                if r:
+                    self.stock_data.append(r)
+                else:
+                    still_failed.append(sym)
+                time.sleep(random.uniform(0.5, 1.0))
+            self.failed_symbols = still_failed
+            logger.info(f"Second pass complete. Total success: {len(self.stock_data)}, "
+                        f"still failed: {len(self.failed_symbols)}")
+            if self.failed_symbols:
+                logger.warning(f"Still-failed symbols: {', '.join(self.failed_symbols[:50])}"
+                               f"{' ...' if len(self.failed_symbols) > 50 else ''}")
 
     def create_dataframe(self) -> pd.DataFrame:
         df = pd.DataFrame(self.stock_data)
