@@ -3,7 +3,7 @@
     "spreadsheet_id": "143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE",
     "tab_name": "Ref_Sheets",
     "gid": 169959016,
-    "mode": "seed_fallback"
+    "mode": "live"
   },
   "schema": {
     "columns": [
@@ -14,8 +14,8 @@
     ],
     "header_row_index": 1
   },
-  "updated_at_utc": "2026-04-28T07:31:46.420992+00:00",
-  "row_count": 14,
+  "updated_at_utc": "2026-07-07T17:43:32.680111+00:00",
+  "row_count": 17,
   "rows": [
     {
       "ref-sheets": "CONSOLIDATED",
@@ -102,10 +102,22 @@
       "sheet-name": "Algo Master Ticker Sheet"
     },
     {
+      "ref-sheets": "US_SGST",
+      "type": "ALGO",
+      "sheet-id": "1r9tdr82pgpu91HAVfLY_4MsDgofG9bU5hFWsyJkK930",
+      "sheet-name": "US D G B - SGST (Reversal Validation) With BOH"
+    },
+    {
       "ref-sheets": "SARAS",
       "type": "SARAS",
       "sheet-id": "1tPSxvZtC7TsnBV4_NTmFtXu7TqavwCy0ndCmia7f0mg",
       "sheet-name": "SARAS"
+    },
+    {
+      "ref-sheets": "BALANCE",
+      "type": "BASE",
+      "sheet-id": "145TqrpQ3Twx6Tezh28s5GnbowlBb_qcY5UM1RvfIclI",
+      "sheet-name": "VS Portfolio"
     }
   ]
 }
