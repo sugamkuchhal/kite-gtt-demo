@@ -74,6 +74,11 @@ GTT_CRITICAL_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Dividend-only rows are excluded here — they are owned by
+# dividend_action_mailer.py. A row mentioning "dividend" is still kept
+# if it ALSO contains a GTT-critical action (e.g. "Bonus 1:1 / Dividend").
+DIVIDEND_RE = re.compile(r"dividend", re.IGNORECASE)
+
 # Email / SMTP settings
 FROM_EMAIL = "sugamkuchhal@gmail.com"
 SMTP_SERVER = "smtp.gmail.com"
@@ -250,6 +255,9 @@ def classify_actions(raw_rows, my_symbols, today):
         if symbol not in my_symbols:
             continue
         subject = str(row.get("subject", "") or row.get("purpose", "")).strip()
+        # Dividend-only rows belong to dividend_action_mailer.py.
+        if DIVIDEND_RE.search(subject) and not GTT_CRITICAL_RE.search(subject):
+            continue
         ex_raw = row.get("exDate") or row.get("exdate")
         rec_raw = row.get("recDate") or row.get("recordDate")
         key = (symbol, subject.lower(), str(ex_raw))
@@ -333,7 +341,8 @@ def format_email(upcoming, recent, unparsed, subject_date, window_from, window_t
                 f'Window: {window_from.strftime("%d-%b-%Y")} &rarr; '
                 f'{window_to.strftime("%d-%b-%Y")} &nbsp;|&nbsp; Date: {subject_date}<br>'
                 f'Red rows are <b>GTT-critical</b> (split / bonus / rights / demerger / '
-                f'buyback) &mdash; trigger prices will need review before the ex-date.'
+                f'buyback) &mdash; trigger prices will need review before the ex-date.<br>'
+                f'<i>Dividends are reported separately by the dividend mailer.</i>'
                 f'</p>')
 
     html.append(_section_title(
