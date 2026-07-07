@@ -265,6 +265,11 @@ def main():
     if "ensure_token" not in scripts:
         scripts.append("ensure_token")
 
+    # refresh_ref_sheets_json runs at the start of script mode and all
+    # chains (see unified_v2.yml), so its deps always participate too.
+    if action != "refresh" and "refresh_ref_sheets_json" not in scripts:
+        scripts.append("refresh_ref_sheets_json")
+
     imports = set()
     visited = set()
     unresolved_dynamic = set()
