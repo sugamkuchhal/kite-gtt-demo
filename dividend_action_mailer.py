@@ -85,6 +85,8 @@ _AMT_PER_SHARE_RE = re.compile(
 )
 # Fallback: any amount right after Rs/Re.
 _AMT_RS_RE = re.compile(r"R(?:s|e)\.?\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
+# Percent-of-face-value dividends (e.g. 'Dividend - 50%').
+_AMT_PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 
 # Email / SMTP settings
 FROM_EMAIL = "sugamkuchhal@gmail.com"
@@ -292,11 +294,12 @@ def parse_nse_date(raw):
     return None
 
 
-def parse_dividend_per_share(subject):
+def parse_dividend_per_share(subject, face_value=None):
     """
     Extract the total per-share dividend from NSE's free-text subject,
     summing multiple amounts (e.g. dividend + special dividend).
-    Returns float or None if nothing parseable.
+    Handles percent-of-face-value amounts (e.g. 'Dividend - 50%' with
+    face value 2 -> Rs 1). Returns float or None if nothing parseable.
 
     Primary: amounts followed by "Per Share" (Rs/Re prefix optional).
     Fallback: any amounts right after Rs/Re.
@@ -304,9 +307,19 @@ def parse_dividend_per_share(subject):
     amounts = [float(m) for m in _AMT_PER_SHARE_RE.findall(subject)]
     if not amounts:
         amounts = [float(m) for m in _AMT_RS_RE.findall(subject)]
+    pcts = [float(m) for m in _AMT_PCT_RE.findall(subject)]
+    if pcts and face_value:
+        amounts.extend(p * face_value / 100.0 for p in pcts)
     if not amounts:
         return None
     return round(sum(amounts), 4)
+
+
+def parse_face_value(row):
+    try:
+        return float(str(row.get("faceVal", "")).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
 
 
 def match_dividends(raw_rows, holdings, target_ex_date):
@@ -336,7 +349,7 @@ def match_dividends(raw_rows, holdings, target_ex_date):
             continue
         seen.add(key)
         qty = holdings[symbol]
-        per_share = parse_dividend_per_share(subject)
+        per_share = parse_dividend_per_share(subject, parse_face_value(row))
         amount = round(per_share * qty, 2) if per_share is not None else None
         entries.append({
             "symbol": symbol,
