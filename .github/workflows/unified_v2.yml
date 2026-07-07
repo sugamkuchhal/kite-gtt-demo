@@ -287,6 +287,7 @@ jobs:
 
             if [ "$ACTION" = "midday" ]; then
               echo "::group::RUN: Mid-day chain"
+              python3 refresh_ref_sheets_json.py
               python3 zerodha_tick_size.py
               python3 set_field_false.py
               python3 fetch_all_gtts.py
@@ -295,6 +296,7 @@ jobs:
               echo "::endgroup::"
             elif [ "$ACTION" = "eod_holiday" ]; then
               echo "::group::RUN: EOD holiday chain"
+              python3 refresh_ref_sheets_json.py
               python3 zerodha_tick_size.py
               bash combined_fetcher.sh
               python3 zerodha_tick_size.py
@@ -308,6 +310,7 @@ jobs:
               echo "::endgroup::"
             elif [ "$ACTION" = "eod" ]; then
               echo "::group::RUN: EOD chain"
+              python3 refresh_ref_sheets_json.py
               python3 zerodha_tick_size.py
               bash combined_fetcher.sh
               python3 zerodha_tick_size.py
