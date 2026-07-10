@@ -24,11 +24,13 @@ Can be run standalone (manual use) or imported by the mailer.
 """
 
 import logging
+import subprocess
+import time
 
 import gspread
 from google.oauth2.service_account import Credentials
 
-from runtime_paths import get_creds_path
+from runtime_paths import get_creds_path, repo_root
 from ref_sheets_utils import resolve_sheet_id
 
 # ==========================
@@ -159,16 +161,56 @@ def purge_target_column(ws, remove_set):
     return {"purged": purged, "not_found": not_found}
 
 
+def _run_subprocess(cmd, label):
+    """
+    Run a subprocess, streaming output to console and capturing it.
+    Returns (lines, error_bool).
+    """
+    lines = []
+    logging.info("Running: %s", label)
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(repo_root()),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    for line in proc.stdout:
+        line = line.rstrip("\n")
+        print(line, flush=True)
+        lines.append(line)
+    rc = proc.wait()
+    lines.append(f"exit code: {rc}")
+    logging.info("%s finished with exit code %d.", label, rc)
+    return lines, rc != 0
+
+
 def run_sip_reg():
     """
     Full profitable-SIP-REG cycle. Returns a result dict:
       {
         "cleared": [tickers cleared from OLD_SIP_REG_List],
         "target": {"purged": int, "not_found": [...]} | None,
+        "rtp_sort_lines": [...],
+        "eod_lines": [...],
         "error": None | str
       }
+    Steps:
+      1. Clear PROFIT rows from OLD_SIP_REG_List (A:E compacted).
+      2. Purge matching tickers from SPECIAL_TARGET_KWK_SIP_REG col I.
+      3. Sleep 60s.
+      4. Run RTP salvage via ops_sort.py.
+      5. Run combined_home_run_eod.sh.
+    Any failure in steps 1-5 sets result["error"].
     """
-    result = {"cleared": [], "target": None, "error": None}
+    result = {
+        "cleared": [],
+        "target": None,
+        "rtp_sort_lines": [],
+        "eod_lines": [],
+        "error": None,
+    }
 
     client = get_client()
 
@@ -191,6 +233,31 @@ def run_sip_reg():
     except Exception as e:
         logging.exception("[%s] purge failed: %s", TARGET_TAB, e)
         result["error"] = f"{TARGET_TAB} purge failed: {e}"
+        return result
+
+    # Step 3: sleep before downstream ops
+    logging.info("Sleeping 60s before RTP salvage...")
+    time.sleep(60)
+
+    # Step 4: RTP salvage
+    rtp_cmd = [
+        "python3", "ops_sort.py",
+        "--ref-sheets", "RTP",
+        "--green-tab", "GTT_List",
+        "--red-tab", "Old_GTT_List",
+        "--yellow-tab", "Action_List",
+    ]
+    rtp_lines, rtp_error = _run_subprocess(rtp_cmd, "RTP Salvaging")
+    result["rtp_sort_lines"] = rtp_lines
+    if rtp_error:
+        result["error"] = "RTP salvage (ops_sort.py) failed"
+        return result
+
+    # Step 5: EOD run
+    eod_lines, eod_error = _run_subprocess(["bash", "combined_home_run_eod.sh"], "combined_home_run_eod.sh")
+    result["eod_lines"] = eod_lines
+    if eod_error:
+        result["error"] = "combined_home_run_eod.sh failed"
 
     logging.info("Profitable SIP REG processing complete.")
     return result
