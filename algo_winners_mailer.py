@@ -27,7 +27,7 @@ SMTP_TOKEN_FILE = str(get_smtp_token_path())
 # ==========================
 # Config (constants)
 # ==========================
-ref_sheets = "BALANCE"
+ref_sheets = "HEDGE_PORTFOLIO"
 tab_name = "Portfolio_BALANCE"
 SERVICE_CREDS = str(get_creds_path())
 
