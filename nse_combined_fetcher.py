@@ -139,25 +139,16 @@ class NSEBaseFetcher:
                 )
 
             return {
-                "Symbol":            symbol,
-                "Company_Name":      info.get("longName") or info.get("shortName") or "",
-                "Sector":            info.get("sector")   or "",
-                "Industry":          info.get("industry") or "",
-                "Market_Cap":        info.get("marketCap"),
-                "Current_Price":     current_price,
-                "Previous_Close":    None,                    # blanked
-                "Day_High":          info.get("dayHigh"),
-                "Day_Low":           info.get("dayLow"),
-                "52_Week_High":      None,                    # blanked
-                "52_Week_Low":       None,                    # blanked
-                "Volume":            info.get("volume"),
-                "Avg_Volume":        None,                    # blanked
-                "PE_Ratio":          None,                    # blanked
-                "Dividend_Yield":    None,                    # blanked
-                "Profit_Margins":    None,                    # blanked
-                "Operating_Margins": None,                    # blanked
-                "EBITDA":            None,                    # blanked
-                "Last_Updated":      datetime.now().strftime("%Y-%m-%d"),
+                "Symbol":        symbol,
+                "Company_Name":  info.get("longName") or info.get("shortName") or "",
+                "Sector":        info.get("sector")   or "",
+                "Industry":      info.get("industry") or "",
+                "Market_Cap":    info.get("marketCap"),   # -> Market_cap (in Cr.)
+                "Current_Price": current_price,
+                "Day_High":      info.get("dayHigh"),
+                "Day_Low":       info.get("dayLow"),
+                "Volume":        info.get("volume"),       # -> Volume (in Cr.)
+                "Last_Updated":  datetime.now().strftime("%Y-%m-%d"),
             }
         except Exception:
             raise
@@ -230,6 +221,29 @@ class NSEBaseFetcher:
         df = pd.DataFrame(self.stock_data)
         if df.empty:
             return df
+        df = df.replace({None: np.nan}, inplace=False)
+        for col in ["Market_Cap", "Volume", "Current_Price", "Day_High", "Day_Low"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        # Derived metrics
+        if "Market_Cap" in df.columns:
+            df["Market_cap (in Cr.)"] = df["Market_Cap"] / 1e7
+        if "Volume" in df.columns and "Current_Price" in df.columns:
+            df["Volume (in Cr.)"] = (df["Volume"] * df["Current_Price"]) / 1e7
+        df.drop(columns=[c for c in ["Market_Cap", "Volume"] if c in df.columns],
+                inplace=True, errors="ignore")
+        if "Last_Updated" in df.columns:
+            try:
+                df["Last_Updated"] = pd.to_datetime(df["Last_Updated"], errors="coerce").dt.strftime("%d-%b-%Y")
+            except Exception:
+                pass
+        df = df.fillna("")
+        # Final sheet layout (A:J); column K left untouched/empty
+        cols = ["Symbol", "Company_Name", "Sector", "Industry", "Current_Price",
+                "Day_High", "Day_Low", "Volume (in Cr.)", "Market_cap (in Cr.)",
+                "Last_Updated"]
+        df = df[[c for c in cols if c in df.columns]]
+        return df
         df = df.replace({None: np.nan}, inplace=False)
         numeric_cols = ["Market_Cap", "Profit_Margins", "Operating_Margins", "EBITDA", "Volume", "Avg_Volume", "Current_Price"]
         for col in numeric_cols:
@@ -355,7 +369,7 @@ class NSEBaseFetcher:
 
         # Format numeric columns: Current_Price and Market_cap (in Cr.) to 2 decimals
         col_map = {col: self._col_letter(i) for i, col in enumerate(df.columns)}
-        for col in ["Current_Price", "Market_cap (in Cr.)"]:
+        for col in ["Current_Price", "Day_High", "Day_Low", "Volume (in Cr.)", "Market_cap (in Cr.)"]:
             if col in col_map:
                 rng = f"{col_map[col]}2:{col_map[col]}{len(df) + 1}"
                 try:
