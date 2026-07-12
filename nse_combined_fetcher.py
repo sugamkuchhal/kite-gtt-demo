@@ -145,18 +145,18 @@ class NSEBaseFetcher:
                 "Industry":          info.get("industry") or "",
                 "Market_Cap":        info.get("marketCap"),
                 "Current_Price":     current_price,
-                "Previous_Close":    "",
-                "Day_High":          "",
-                "Day_Low":           "",
-                "52_Week_High":      "",
-                "52_Week_Low":       "",
-                "Volume":            "",
-                "Avg_Volume":        "",
-                "PE_Ratio":          "",
-                "Dividend_Yield":    "",
-                "Profit_Margins":    "",
-                "Operating_Margins": "",
-                "EBITDA":            "",
+                "Previous_Close":    None,                    # blanked
+                "Day_High":          info.get("dayHigh"),
+                "Day_Low":           info.get("dayLow"),
+                "52_Week_High":      None,                    # blanked
+                "52_Week_Low":       None,                    # blanked
+                "Volume":            info.get("volume"),
+                "Avg_Volume":        None,                    # blanked
+                "PE_Ratio":          None,                    # blanked
+                "Dividend_Yield":    None,                    # blanked
+                "Profit_Margins":    None,                    # blanked
+                "Operating_Margins": None,                    # blanked
+                "EBITDA":            None,                    # blanked
                 "Last_Updated":      datetime.now().strftime("%Y-%m-%d"),
             }
         except Exception:
@@ -231,19 +231,29 @@ class NSEBaseFetcher:
         if df.empty:
             return df
         df = df.replace({None: np.nan}, inplace=False)
-        # Market cap: raw value -> Cr.
+        numeric_cols = ["Market_Cap", "Profit_Margins", "Operating_Margins", "EBITDA", "Volume", "Avg_Volume", "Current_Price"]
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce")
+        # Derived metrics
         if "Market_Cap" in df.columns:
-            df["Market_Cap"] = pd.to_numeric(df["Market_Cap"], errors="coerce")
             df["Market_cap (in Cr.)"] = df["Market_Cap"] / 1e7
-            df.drop(columns=["Market_Cap"], inplace=True)
-        if "Current_Price" in df.columns:
-            df["Current_Price"] = pd.to_numeric(df["Current_Price"], errors="coerce")
+        if "Profit_Margins" in df.columns:
+            df["Profit_Margins (%age)"] = df["Profit_Margins"] * 100
+        if "Operating_Margins" in df.columns:
+            df["Operating_Margins (%age)"] = df["Operating_Margins"] * 100
+        if "EBITDA" in df.columns:
+            df["EBITDA (in Cr.)"] = df["EBITDA"] / 1e7
+        if "Volume" in df.columns and "Current_Price" in df.columns:
+            df["Volume (in Cr.)"] = (df["Volume"] * df["Current_Price"]) / 1e7
+        if "Avg_Volume" in df.columns and "Current_Price" in df.columns:
+            df["Avg_Volume (in Cr.)"] = (df["Avg_Volume"] * df["Current_Price"]) / 1e7
+        # drop raw numeric intermediate cols
+        df.drop(columns=[c for c in ["Market_Cap", "Profit_Margins", "Operating_Margins", "EBITDA", "Volume", "Avg_Volume"] if c in df.columns], inplace=True, errors="ignore")
         # Last_Updated as DD-MMM-YYYY string
         if "Last_Updated" in df.columns:
             try:
-                df["Last_Updated"] = pd.to_datetime(
-                    df["Last_Updated"], errors="coerce"
-                ).dt.strftime("%d-%b-%Y")
+                df["Last_Updated"] = pd.to_datetime(df["Last_Updated"], errors="coerce").dt.strftime("%d-%b-%Y")
             except Exception:
                 pass
         df = df.fillna("")
