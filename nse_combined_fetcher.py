@@ -139,13 +139,25 @@ class NSEBaseFetcher:
                 )
 
             return {
-                "Symbol":        symbol,
-                "Company_Name":  info.get("longName") or info.get("shortName") or "",
-                "Sector":        info.get("sector")   or "",
-                "Industry":      info.get("industry") or "",
-                "Current_Price": current_price,
-                "Market_Cap":    info.get("marketCap"),
-                "Last_Updated":  datetime.now().strftime("%Y-%m-%d"),
+                "Symbol":            symbol,
+                "Company_Name":      info.get("longName") or info.get("shortName") or "",
+                "Sector":            info.get("sector")   or "",
+                "Industry":          info.get("industry") or "",
+                "Market_Cap":        info.get("marketCap"),
+                "Current_Price":     current_price,
+                "Previous_Close":    "",
+                "Day_High":          "",
+                "Day_Low":           "",
+                "52_Week_High":      "",
+                "52_Week_Low":       "",
+                "Volume":            "",
+                "Avg_Volume":        "",
+                "PE_Ratio":          "",
+                "Dividend_Yield":    "",
+                "Profit_Margins":    "",
+                "Operating_Margins": "",
+                "EBITDA":            "",
+                "Last_Updated":      datetime.now().strftime("%Y-%m-%d"),
             }
         except Exception:
             raise
@@ -235,10 +247,6 @@ class NSEBaseFetcher:
             except Exception:
                 pass
         df = df.fillna("")
-        # enforce column order
-        cols = ["Symbol", "Company_Name", "Sector", "Industry",
-                "Current_Price", "Market_cap (in Cr.)", "Last_Updated"]
-        df = df[[c for c in cols if c in df.columns]]
         return df
 
     # ----- Google Sheets helpers -----
