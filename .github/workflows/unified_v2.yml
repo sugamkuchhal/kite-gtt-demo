@@ -249,6 +249,14 @@ jobs:
           [ -n "$TELEGRAM_TOKEN_JSON" ] && printf '%s' "$TELEGRAM_TOKEN_JSON" | sudo tee "$MACDIR/telegram_token.json" >/dev/null || true
           ls -l creds.json smtp_token.json api_key.txt access_token.txt || true
 
+      - name: Refresh ref_sheets.json
+        if: ${{ steps.plan.outputs.should_run == 'true' && steps.plan.outputs.action != 'refresh' }}
+        run: |
+          set -euo pipefail
+          if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi
+          export PATH="$PWD/bin:$PATH"
+          python3 refresh_ref_sheets_json.py
+
       - name: Run unified modes (script/refresh/midday/eod/auto)
         if: ${{ steps.plan.outputs.should_run == 'true' }}
         env:
@@ -273,7 +281,6 @@ jobs:
             if [ "$ACTION" = "script" ]; then
               echo "::notice::mode=script → ensuring token, then running: ${CMD_VAL}"
               ensure_token_cmd
-              python3 refresh_ref_sheets_json.py
               eval "$CMD_VAL"
               exit 0
             fi
@@ -290,7 +297,6 @@ jobs:
 
             if [ "$ACTION" = "midday" ]; then
               echo "::group::RUN: Mid-day chain"
-              python3 refresh_ref_sheets_json.py
               python3 zerodha_tick_size.py
               python3 set_field_false.py
               python3 fetch_all_gtts.py
@@ -299,7 +305,6 @@ jobs:
               echo "::endgroup::"
             elif [ "$ACTION" = "eod_holiday" ]; then
               echo "::group::RUN: EOD holiday chain"
-              python3 refresh_ref_sheets_json.py
               python3 zerodha_tick_size.py
               bash combined_fetcher.sh
               python3 zerodha_tick_size.py
@@ -313,7 +318,6 @@ jobs:
               echo "::endgroup::"
             elif [ "$ACTION" = "eod" ]; then
               echo "::group::RUN: EOD chain"
-              python3 refresh_ref_sheets_json.py
               python3 zerodha_tick_size.py
               bash combined_fetcher.sh
               python3 zerodha_tick_size.py
@@ -328,12 +332,10 @@ jobs:
               echo "::endgroup::"
             elif [ "$ACTION" = "normalize" ]; then
               echo "::group::RUN: Normalize chain"
-              python3 refresh_ref_sheets_json.py
               bash combined_normalize_run.sh
               echo "::endgroup::"
             elif [ "$ACTION" = "teleport_full" ]; then
               echo "::group::RUN: Teleport Full"
-              python3 refresh_ref_sheets_json.py
               python3 data_teleporter.py --mode full
               echo "::endgroup::"
             else
