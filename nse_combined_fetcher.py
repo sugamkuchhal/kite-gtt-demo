@@ -146,11 +146,15 @@ class NSEBaseFetcher:
                     getattr(ticker, "fast_info", {}) and ticker.fast_info.get("last_price")
                 ) or info.get("regularMarketPrice") or info.get("previousClose")
 
-            # An all-blank response (no price AND empty info) is Yahoo
-            # rate-limiting us, not real data. Raise so the backoff/retry
-            # wrapper engages instead of writing an empty row as "success".
-            if current_price is None and not info:
-                raise RuntimeError("empty Yahoo response (likely rate-limited)")
+            # A response with no price AND no company name means Yahoo is
+            # throttling us or returning a stub dict (e.g. {quoteType: EQUITY}).
+            # info being non-empty is NOT enough — Yahoo returns partial dicts
+            # while rate-limiting. Require at least a price OR a real name.
+            if current_price is None and not info.get("longName") and not info.get("shortName"):
+                raise RuntimeError(
+                    f"unusable Yahoo response for {symbol}: no price, no name "
+                    f"(info keys: {list(info.keys())[:5]})"
+                )
 
             result = {
                 "Symbol": symbol,  # keep NSE: prefix here everywhere
