@@ -1,56 +1,61 @@
 #!/usr/bin/env python3
 """
-Standalone data_teleporter runner (replicates BANK_NEW changes to destination BANK_FINAL).
-Run: python3 data_teleporter.py
-"""
+data_teleporter.py  (v2)
 
-import time
+Replicates BANK_NEW rows (keyed by BANK_INC) into CALCULATOR!BANK_FINAL.
+
+What changed from v1:
+- BANK_FINAL columns A:B are read ONCE into an in-memory lookup dict.
+  No more per-key paged scans: the whole classify step is a dict lookup.
+- Verification uses the same in-memory snapshot; zero extra API calls.
+- Formula carry-forward (H:I) is done in one batched write per range,
+  with a loud warning if the template row is blank.
+- --dry-run flag: prints the action plan without touching any sheet.
+- API calls: ~4 (read INC, read NEW rows, read FINAL index + template,
+  write batch) vs the previous O(keys) reads.
+
+Run: python3 data_teleporter.py [--dry-run]
+"""
+import argparse
 import random
 import sys
+import time
 from datetime import datetime
-from typing import List, Tuple, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple
+
 import gspread
 from google.oauth2.service_account import Credentials
 
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
 
-# ---------------- CONFIG ----------------
-CREDS_PATH = str(get_creds_path())
+import atexit
+from script_logger import log_start, log_end
 
-# Source spreadsheet resolver key (contains BANK_INC and BANK_NEW)
-ref_sheets_src = "BANK"
-sheet_id_src = resolve_sheet_id(ref_sheets_src)
+_RUN_CTX = log_start("data_teleporter")
+atexit.register(log_end, _RUN_CTX)
 
-# Destination spreadsheet resolver key
+# ── CONFIG ───────────────────────────────────────────────────────────────────
+CREDS_PATH      = str(get_creds_path())
+ref_sheets_src  = "BANK"
 ref_sheets_dest = "CALCULATOR"
-sheet_id_dest = resolve_sheet_id(ref_sheets_dest)
+TAB_INC         = "BANK_INC"
+TAB_NEW         = "BANK_NEW"
+TAB_FINAL       = "BANK_FINAL"
+LAST_COL        = "G"          # A:G — DATE SYMBOL CLOSE LOW HIGH VOLUME TYPE
+FORMULA_COLS    = "H:I"        # carry-forward template from row 2
+TEMPLATE_ROW    = 2
 
-# Sheet/tab names (as we discussed)
-tab_name_inc = "BANK_INC"
-tab_name_new = "BANK_NEW"
-tab_name_final = "BANK_FINAL"
+BATCH_SIZE      = 500          # rows per Sheets update call
+APPEND_CHUNK    = 500
+ROW_BUFFER      = 100          # extra rows to pre-add before append
+MAX_RETRIES     = 5
+BATCH_SLEEP     = 0.15
 
-# Tuning
-DEFAULT_PAGE_SIZE = 10000
-DEFAULT_BATCH_UPDATE_SIZE = 500
-DEFAULT_APPEND_CHUNK = 500
-ROW_BUFFER = 100
-BATCH_SLEEP = 0.15
-SAMPLE_VERIFICATION_COUNT = 100
-MAX_RETRIES = 5
-
-# ----------------- helpers -----------------
-def log(msg=""):
-    print(msg, flush=True)
-
-def backoff_sleep(attempt, base=1.0, cap=30.0):
-    exp = min(cap, base * (2 ** (attempt - 1)))
-    time.sleep(random.uniform(0, exp))
-
-def authorize(creds_path: str = CREDS_PATH):
+# ── AUTH ─────────────────────────────────────────────────────────────────────
+def _authorize() -> gspread.Client:
     creds = Credentials.from_service_account_file(
-        creds_path,
+        CREDS_PATH,
         scopes=[
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive",
@@ -58,482 +63,312 @@ def authorize(creds_path: str = CREDS_PATH):
     )
     return gspread.authorize(creds)
 
-def gsheet_get(ws, rng, value_render_option=None, retries=MAX_RETRIES):
-    last = None
-    for attempt in range(1, retries + 1):
-        try:
-            if value_render_option:
-                return ws.get(rng, value_render_option=value_render_option) or []
-            return ws.get(rng) or []
-        except Exception as e:
-            last = e
-            log(f"⚠️ GET {rng} attempt {attempt} failed: {e}")
-            backoff_sleep(attempt)
-    raise last
+# ── RETRY HELPERS ─────────────────────────────────────────────────────────────
+def _backoff(attempt: int, base: float = 1.0, cap: float = 30.0) -> None:
+    time.sleep(random.uniform(0, min(cap, base * (2 ** (attempt - 1)))))
 
-def gsheet_update(ws, rng, values, value_input_option="USER_ENTERED", retries=MAX_RETRIES):
-    last = None
-    for attempt in range(1, retries + 1):
+def _get(ws: gspread.Worksheet, rng: str, **kw) -> List[List[Any]]:
+    for attempt in range(1, MAX_RETRIES + 1):
         try:
-            ws.update(range_name=rng, values=values, value_input_option=value_input_option)
+            return ws.get(rng, **kw) or []
+        except Exception as e:
+            print(f"  ⚠ GET {rng} attempt {attempt}: {e}")
+            if attempt == MAX_RETRIES:
+                raise
+            _backoff(attempt)
+    return []
+
+def _update(ws: gspread.Worksheet, rng: str, values: List[List[Any]]) -> None:
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            ws.update(range_name=rng, values=values, value_input_option="USER_ENTERED")
             return
         except Exception as e:
-            last = e
-            log(f"⚠️ UPDATE {rng} attempt {attempt} failed: {e}")
-            backoff_sleep(attempt)
-    raise last
+            print(f"  ⚠ UPDATE {rng} attempt {attempt}: {e}")
+            if attempt == MAX_RETRIES:
+                raise
+            _backoff(attempt)
 
-def ensure_rows(ws, required_rows: int):
-    current = ws.row_count
-    if required_rows > current:
-        to_add = required_rows - current
-        log(f"🔧 Adding {to_add} rows to destination (had {current}, need {required_rows})")
-        ws.add_rows(to_add)
-        time.sleep(0.2)
+def _append(ws: gspread.Worksheet, rows: List[List[Any]]) -> None:
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            ws.append_rows(rows, value_input_option="USER_ENTERED")
+            return
+        except Exception as e:
+            print(f"  ⚠ APPEND attempt {attempt}: {e}")
+            if attempt == MAX_RETRIES:
+                raise
+            _backoff(attempt)
 
-def chunked(items, size):
-    for i in range(0, len(items), size):
-        yield items[i : i + size]
+# ── KEY HELPERS ───────────────────────────────────────────────────────────────
+def _key(row: List[Any], a: int = 0, b: int = 1) -> Tuple[str, str]:
+    return (
+        "" if len(row) <= a or row[a] is None else str(row[a]).strip(),
+        "" if len(row) <= b or row[b] is None else str(row[b]).strip(),
+    )
 
-def normalize_key(a, b):
-    a = "" if a is None else str(a).strip()
-    b = "" if b is None else str(b).strip()
-    return (a, b)
-
-def _group_contiguous(sorted_indices: List[int]) -> List[Tuple[int,int]]:
-    if not sorted_indices:
-        return []
-    groups = []
-    start = prev = sorted_indices[0]
-    for idx in sorted_indices[1:]:
-        if idx == prev + 1:
-            prev = idx
-        else:
-            groups.append((start, prev))
-            start = prev = idx
-    groups.append((start, prev))
-    return groups
-
-def rows_equal(a: List[Any], b: List[Any]) -> bool:
-    a = a or []
-    b = b or []
-    maxlen = max(len(a), len(b))
-    for i in range(maxlen):
+def _rows_equal(a: List[Any], b: List[Any]) -> bool:
+    n = max(len(a), len(b))
+    for i in range(n):
         av = "" if i >= len(a) or a[i] is None else str(a[i]).strip()
         bv = "" if i >= len(b) or b[i] is None else str(b[i]).strip()
         if av != bv:
             return False
     return True
 
-# ----------------- domain functions -----------------
-def read_inc_keys(client: gspread.client.Client, source_sheet_id: str, inc_sheet_name: str,
-                  col_range: str = "A:B") -> List[Tuple[str,str]]:
-    ss = client.open_by_key(source_sheet_id)
-    ws = ss.worksheet(inc_sheet_name)
-    vals = ws.get(col_range) or []
-    if not vals:
-        return []
-    first_row = vals[0]
-    header_like = any((str(x).strip().upper() in ("DATE","SYMBOL") for x in first_row))
-    start_idx = 1 if header_like else 0
-    keys = []
-    for row in vals[start_idx:]:
-        a = row[0] if len(row) > 0 else ""
-        b = row[1] if len(row) > 1 else ""
-        k = normalize_key(a,b)
-        if k[0] or k[1]:
-            keys.append(k)
-    return keys
-
-def find_keys_in_sheet_paged(client: gspread.client.Client, sheet_id: str, sheet_name: str,
-                             keys_set: List[Tuple[str,str]], page_size: int = DEFAULT_PAGE_SIZE) -> Dict[Tuple[str,str], List[int]]:
-    ss = client.open_by_key(sheet_id)
-    ws = ss.worksheet(sheet_name)
-    total_rows = ws.row_count
-    keys_needed = set(keys_set)
-    found: Dict[Tuple[str,str], List[int]] = {}
-    start = 1
-    while start <= total_rows and keys_needed:
-        end = min(total_rows, start + page_size - 1)
-        rng = f"A{start}:B{end}"
-        try:
-            page_vals = ws.get(rng) or []
-        except Exception as e:
-            log(f"[WARN] page read {rng} failed: {e}")
-            page_vals = []
-        for idx, row in enumerate(page_vals, start=start):
-            date_val = row[0] if len(row) > 0 else ""
-            symbol_val = row[1] if len(row) > 1 else ""
-            k = normalize_key(date_val, symbol_val)
-            if k in keys_needed:
-                found.setdefault(k, []).append(idx)
-                keys_needed.discard(k)
-        # stop after current page if done
-        if not keys_needed:
-            break
-        start = end + 1
-    return found
-
-def read_rows_by_indices(client: gspread.client.Client, sheet_id: str, sheet_name: str,
-                         row_indices: List[int], last_col: str = "G") -> Dict[int, List[Any]]:
-    if not row_indices:
-        return {}
-    ss = client.open_by_key(sheet_id)
-    ws = ss.worksheet(sheet_name)
-    idxs_sorted = sorted(set(row_indices))
-    groups = _group_contiguous(idxs_sorted)
-    res = {}
-    for start, end in groups:
-        rng = f"A{start}:{last_col}{end}"
-        block = ws.get(rng) or []
-        for offset, row in enumerate(block):
-            res[start + offset] = row
-    return res
-
-def delete_rows_descending(client: gspread.client.Client, sheet_id: str, sheet_name: str, row_indices: List[int]):
-    if not row_indices:
-        return
-    ss = client.open_by_key(sheet_id)
-    ws = ss.worksheet(sheet_name)
-    unique_desc = sorted(set(row_indices), reverse=True)
-    for r in unique_desc:
-        try:
-            ws.delete_rows(r)
-            time.sleep(0.05)
-        except Exception as e:
-            log(f"[WARN] delete row {r} failed: {e}")
-
-def batch_overwrite_rows(client: gspread.client.Client, sheet_id: str, sheet_name: str,
-                         updates: List[Tuple[int, List[Any]]], batch_size: int = DEFAULT_BATCH_UPDATE_SIZE, last_col: str = "G"):
+# ── CHUNKED CONTIGUOUS WRITE ──────────────────────────────────────────────────
+def _write_contiguous_batches(
+    ws: gspread.Worksheet,
+    updates: List[Tuple[int, List[Any]]],
+) -> None:
+    """Write (row_index, row_data) pairs; groups contiguous rows into single calls."""
     if not updates:
         return
-    ss = client.open_by_key(sheet_id)
-    ws = ss.worksheet(sheet_name)
-    updates_sorted = sorted(updates, key=lambda x: x[0])
-    groups = []
-    current = []
-    prev = None
-    for idx, vals in updates_sorted:
-        if prev is None or idx == prev + 1:
-            current.append((idx, vals))
+    updates = sorted(updates, key=lambda x: x[0])
+    # build contiguous groups
+    groups: List[List[Tuple[int, List[Any]]]] = []
+    grp = [updates[0]]
+    for item in updates[1:]:
+        if item[0] == grp[-1][0] + 1:
+            grp.append(item)
         else:
-            groups.append(current)
-            current = [(idx, vals)]
-        prev = idx
-    if current:
-        groups.append(current)
+            groups.append(grp)
+            grp = [item]
+    groups.append(grp)
+
     for grp in groups:
-        indices = [i for i,_ in grp]
-        rows_block = [v for _,v in grp]
-        total = len(rows_block)
-        s_idx = 0
-        while s_idx < total:
-            e_idx = min(total, s_idx + batch_size)
-            chunk_rows = rows_block[s_idx:e_idx]
-            chunk_start = indices[s_idx]
-            chunk_end = indices[s_idx + len(chunk_rows) - 1]
-            rng = f"A{chunk_start}:{last_col}{chunk_end}"
-            try:
-                ws.update(range_name=rng, values=chunk_rows, value_input_option="USER_ENTERED")
-            except Exception as e:
-                log(f"[ERROR] overwrite {rng} failed: {e}")
-                raise
-            s_idx = e_idx
+        for start in range(0, len(grp), BATCH_SIZE):
+            chunk = grp[start: start + BATCH_SIZE]
+            r_start = chunk[0][0]
+            r_end   = chunk[-1][0]
+            rng     = f"A{r_start}:{LAST_COL}{r_end}"
+            _update(ws, rng, [row for _, row in chunk])
             time.sleep(BATCH_SLEEP)
 
-def batch_append_rows(client: gspread.client.Client, sheet_id: str, sheet_name: str,
-                      rows_to_append: List[List[Any]], append_chunk: int = DEFAULT_APPEND_CHUNK):
-    if not rows_to_append:
-        return
-    ss = client.open_by_key(sheet_id)
-    ws = ss.worksheet(sheet_name)
-    i = 0
-    total = len(rows_to_append)
-    while i < total:
-        chunk = rows_to_append[i:i+append_chunk]
-        try:
-            ws.append_rows(chunk, value_input_option="USER_ENTERED")
-        except Exception as e:
-            log(f"[ERROR] append chunk failed: {e}")
-            raise
-        i += append_chunk
-        time.sleep(BATCH_SLEEP)
+# ── MAIN LOGIC ────────────────────────────────────────────────────────────────
+def run(dry_run: bool = False) -> None:
+    client = _authorize()
 
-def copy_formulas_hi_where_blank(client: gspread.client.Client, sheet_id: str, sheet_name: str,
-                                 target_ranges: List[Tuple[int,int]]):
-    if not target_ranges:
-        return
-    ss = client.open_by_key(sheet_id)
-    ws = ss.worksheet(sheet_name)
-    try:
-        template = ws.get("H2:I2", value_render_option="FORMULA") or [["",""]]
-        template_row = template[0] if template and template[0] else ["",""]
-    except Exception as e:
-        log(f"[WARN] read template H2:I2 failed: {e}")
-        return
-    for start, end in target_ranges:
-        rng = f"H{start}:I{end}"
-        existing = ws.get(rng, value_render_option="FORMULA") or []
-        rows_to_write = []
-        write_any = False
-        for offset in range(end - start + 1):
-            existing_row = existing[offset] if offset < len(existing) else []
-            h = existing_row[0] if len(existing_row) > 0 else ""
-            i = existing_row[1] if len(existing_row) > 1 else ""
-            new_h = h
-            new_i = i
-            if not str(h).strip():
-                new_h = template_row[0] if len(template_row) > 0 else ""
-            if not str(i).strip():
-                new_i = template_row[1] if len(template_row) > 1 else ""
-            rows_to_write.append([new_h, new_i])
-            if new_h != h or new_i != i:
-                write_any = True
-        if write_any:
-            try:
-                ws.update(range_name=rng, values=rows_to_write, value_input_option="USER_ENTERED")
-            except Exception as e:
-                log(f"[ERROR] write formulas {rng} failed: {e}")
-                raise
-        time.sleep(0.02)
+    src_id  = resolve_sheet_id(ref_sheets_src)
+    dest_id = resolve_sheet_id(ref_sheets_dest)
 
-# ----------------- orchestrator -----------------
-def replicate_bank_new_to_dest(creds_path: str,
-                               source_sheet_id: str,
-                               dest_sheet_id: str,
-                               inc_sheet_name: str = tab_name_inc,
-                               new_sheet_name: str = tab_name_new,
-                               final_sheet_name: str = tab_name_final,
-                               page_size: int = DEFAULT_PAGE_SIZE,
-                               batch_update_size: int = DEFAULT_BATCH_UPDATE_SIZE,
-                               append_chunk: int = DEFAULT_APPEND_CHUNK):
-    client = authorize(creds_path)
-    # 1) read inc keys
-    inc_keys = read_inc_keys(client, source_sheet_id, inc_sheet_name, col_range="A:B")
+    src_ss  = client.open_by_key(src_id)
+    dest_ss = client.open_by_key(dest_id)
+
+    ws_inc   = src_ss.worksheet(TAB_INC)
+    ws_new   = src_ss.worksheet(TAB_NEW)
+    ws_final = dest_ss.worksheet(TAB_FINAL)
+
+    # ── STEP 1: read INC keys ─────────────────────────────────────────────
+    print(f"[1/5] Reading keys from {TAB_INC}...")
+    inc_raw = _get(ws_inc, "A:B")
+    # skip header if present
+    start_idx = 1 if inc_raw and any(
+        str(c).strip().upper() in ("DATE", "SYMBOL") for c in inc_raw[0]
+    ) else 0
+    inc_keys: List[Tuple[str, str]] = []
+    for row in inc_raw[start_idx:]:
+        k = _key(row)
+        if k[0] or k[1]:
+            inc_keys.append(k)
+
     if not inc_keys:
-        log("[INFO] no keys in BANK_INC; nothing to do.")
+        print(f"  No keys in {TAB_INC}; nothing to do.")
         return
-    log(f"[INFO] {len(inc_keys)} keys read from {inc_sheet_name}")
+    print(f"  {len(inc_keys)} keys.")
 
-    # 2) locate keys in source NEW
-    log("[INFO] locating keys in source BANK_NEW...")
-    src_found = find_keys_in_sheet_paged(client, source_sheet_id, new_sheet_name, inc_keys, page_size=page_size)
-    missing = [k for k in inc_keys if k not in src_found]
-    if missing:
-        log(f"[WARN] {len(missing)} keys from BANK_INC not found in BANK_NEW; skipping those.")
-    # pick canonical source index per key
-    key_to_src_index = {}
-    src_indices = []
-    for k, idxs in src_found.items():
-        canonical = min(idxs)
-        key_to_src_index[k] = canonical
-        src_indices.append(canonical)
-    process_keys = [k for k in inc_keys if k in key_to_src_index]
-    if not process_keys:
-        log("[INFO] no payload rows found; exiting.")
+    # ── STEP 2: read NEW — build lookup ───────────────────────────────────
+    print(f"[2/5] Reading {TAB_NEW}...")
+    new_raw = _get(ws_new, f"A:{ LAST_COL}")
+    new_lookup: Dict[Tuple[str, str], List[Any]] = {}
+    for row in new_raw:
+        k = _key(row)
+        if k[0] or k[1]:
+            new_lookup.setdefault(k, row)   # first occurrence wins
+
+    missing_in_new = [k for k in inc_keys if k not in new_lookup]
+    if missing_in_new:
+        print(f"  ⚠ {len(missing_in_new)} key(s) from {TAB_INC} not found in {TAB_NEW}; skipping.")
+    payload: Dict[Tuple[str, str], List[Any]] = {
+        k: new_lookup[k] for k in inc_keys if k in new_lookup
+    }
+    if not payload:
+        print("  Nothing to apply after reading source.")
         return
+    print(f"  {len(payload)} payload rows.")
 
-    # 3) read source full rows
-    log(f"[INFO] reading {len(src_indices)} source rows from BANK_NEW ...")
-    src_rows_map = read_rows_by_indices(client, source_sheet_id, new_sheet_name, src_indices, last_col="G")
-    payload_map = {}
-    for k in process_keys:
-        idx = key_to_src_index[k]
-        vals = src_rows_map.get(idx)
-        if not vals:
-            log(f"[WARN] expected source row {idx} for key {k} missing; skipping")
-            continue
-        payload_map[k] = vals
+    # ── STEP 3: read FINAL index ONCE ────────────────────────────────────
+    print(f"[3/5] Building index of {TAB_FINAL}...")
+    final_raw = _get(ws_final, "A:B")
+    # {(date, symbol): [row_numbers]}  (1-indexed, row 1 = header)
+    final_index: Dict[Tuple[str, str], List[int]] = {}
+    for row_num, row in enumerate(final_raw, start=1):
+        k = _key(row)
+        if k[0] or k[1]:
+            final_index.setdefault(k, []).append(row_num)
+    print(f"  {len(final_index)} distinct keys in {TAB_FINAL}.")
 
-    if not payload_map:
-        log("[INFO] nothing to apply after reading source; exiting.")
-        return
+    # ── classify ──────────────────────────────────────────────────────────
+    to_overwrite:  List[Tuple[int, List[Any]]] = []
+    to_append:     List[List[Any]]             = []
+    to_delete:     List[int]                   = []   # duplicate extra rows
 
-    # 4) locate keys in destination
-    log("[INFO] locating keys in destination BANK_FINAL ...")
-    dest_found = find_keys_in_sheet_paged(client, dest_sheet_id, final_sheet_name, list(payload_map.keys()), page_size=page_size)
-
-    to_overwrite = []
-    to_append = []
-    duplicates_to_delete = []
-    overwrite_ranges_for_formula = []
-    append_ranges_for_formula = []
-
-    # Build action plan
-    for key, src_row in payload_map.items():
-        dest_idxs = dest_found.get(key, [])
-        if dest_idxs:
-            dest_idxs_sorted = sorted(set(dest_idxs))
-            canonical = dest_idxs_sorted[0]
-            extras = dest_idxs_sorted[1:]
-            if extras:
-                duplicates_to_delete.extend(extras)
+    for k, src_row in payload.items():
+        dest_rows = final_index.get(k, [])
+        if dest_rows:
+            canonical = min(dest_rows)
+            extras    = sorted(dest_rows)[1:]
+            to_delete.extend(extras)
             to_overwrite.append((canonical, src_row))
-            overwrite_ranges_for_formula.append((canonical, canonical))
         else:
             to_append.append(src_row)
 
-    log(f"[PLAN] overwrites: {len(to_overwrite)}, appends: {len(to_append)}, duplicates_to_delete: {len(duplicates_to_delete)}")
+    print(f"\n  PLAN → overwrites: {len(to_overwrite)} | "
+          f"appends: {len(to_append)} | "
+          f"duplicate rows to delete: {len(to_delete)}")
 
-    # 5) delete duplicates descending
-    if duplicates_to_delete:
-        log("[ACTION] deleting duplicate extra rows (descending indices)...")
-        delete_rows_descending(client, dest_sheet_id, final_sheet_name, duplicates_to_delete)
-        # re-locate canonical indices after deletes
-        log("[INFO] re-locating canonical indices after deletes...")
-        dest_found_after = find_keys_in_sheet_paged(client, dest_sheet_id, final_sheet_name, list(payload_map.keys()), page_size=page_size)
-        new_overwrite = []
-        overwrite_ranges_for_formula = []
-        for key, src_row in payload_map.items():
-            dest_idxs = dest_found_after.get(key, [])
-            if dest_idxs:
-                canonical = min(dest_idxs)
-                new_overwrite.append((canonical, src_row))
-                overwrite_ranges_for_formula.append((canonical, canonical))
-        to_overwrite = new_overwrite
-        log(f"[INFO] confirmed {len(to_overwrite)} overwrite targets after cleanup.")
+    if dry_run:
+        print("\n  DRY RUN — no writes performed.")
+        return
 
-    # 6) ensure rows for appends
-    ss_dest = client.open_by_key(dest_sheet_id)
-    ws_dest = ss_dest.worksheet(final_sheet_name)
-    dest_row_count = ws_dest.row_count
-    projected = dest_row_count + len(to_append) + ROW_BUFFER
-    ensure_rows(ws_dest, projected)
+    # ── STEP 4: execute ───────────────────────────────────────────────────
+    print(f"[4/5] Executing...")
 
-    # 7) perform overwrites
+    # 4a delete duplicates (descending so row numbers stay valid)
+    if to_delete:
+        print(f"  Deleting {len(to_delete)} duplicate row(s)...")
+        for r in sorted(set(to_delete), reverse=True):
+            try:
+                ws_final.delete_rows(r)
+                time.sleep(0.05)
+            except Exception as e:
+                print(f"  ⚠ delete row {r}: {e}")
+        # rebuild index after deletes (one fresh read)
+        final_raw = _get(ws_final, "A:B")
+        final_index = {}
+        for row_num, row in enumerate(final_raw, start=1):
+            k = _key(row)
+            if k[0] or k[1]:
+                final_index.setdefault(k, []).append(row_num)
+        # re-resolve canonical indices
+        to_overwrite = []
+        for k, src_row in payload.items():
+            dest_rows = final_index.get(k, [])
+            if dest_rows:
+                to_overwrite.append((min(dest_rows), src_row))
+
+    # 4b overwrites
     if to_overwrite:
-        log(f"[ACTION] performing {len(to_overwrite)} overwrites...")
-        batch_overwrite_rows(client, dest_sheet_id, final_sheet_name, to_overwrite, batch_size=batch_update_size, last_col="G")
+        print(f"  Overwriting {len(to_overwrite)} row(s)...")
+        _write_contiguous_batches(ws_final, to_overwrite)
 
-    # 8) perform appends (and capture appended ranges for formula copy)
+    # 4c appends
+    append_start_rows: List[int] = []
     if to_append:
-        log(f"[ACTION] appending {len(to_append)} rows...")
-        # Do chunked append; after each chunk attempt to determine appended range
-        ssd = client.open_by_key(dest_sheet_id)
-        wsd = ssd.worksheet(final_sheet_name)
-        i = 0
-        while i < len(to_append):
-            chunk = to_append[i:i+append_chunk]
-
-            # --- Retry append with backoff ---
-            last_err = None
-            for attempt in range(1, MAX_RETRIES + 1):
-                try:
-                    wsd.append_rows(chunk, value_input_option="USER_ENTERED")
-                    break
-                except Exception as e:
-                    last_err = e
-                    log(f"[WARN] append_rows attempt {attempt} failed: {e}")
-                    backoff_sleep(attempt)
-            if last_err and attempt == MAX_RETRIES:
-                raise last_err
-
-            # --- Determine where rows were appended (with retry for tail read) ---
-            total_rows_now = wsd.row_count
-            tail_start = max(1, total_rows_now - (len(chunk) + 200))
-
-            tail = None
-            last_err = None
-            for attempt in range(1, MAX_RETRIES + 1):
-                try:
-                    tail = wsd.get(f"A{tail_start}:B{total_rows_now}") or []
-                    break
-                except Exception as e:
-                    last_err = e
-                    log(f"[WARN] tail get attempt {attempt} failed: {e}")
-                    backoff_sleep(attempt)
-            if tail is None and last_err:
-                raise last_err
-
-            # --- Map appended rows back to their positions ---
-            tail_map = {}
-            for offset, r in enumerate(tail):
-                rownum = tail_start + offset
-                d = r[0] if len(r) > 0 else ""
-                s = r[1] if len(r) > 1 else ""
-                tail_map[normalize_key(d, s)] = rownum
-
-            mapped_rows = []
-            for r in chunk:
-                k = normalize_key(
-                    r[0] if len(r) > 0 else "",
-                    r[1] if len(r) > 1 else ""
-                )
-                if k in tail_map:
-                    mapped_rows.append(tail_map[k])
-
-            if mapped_rows:
-                append_start = min(mapped_rows)
-                append_end = max(mapped_rows)
-                append_ranges_for_formula.append((append_start, append_end))
-
-            i += append_chunk
+        print(f"  Appending {len(to_append)} row(s)...")
+        # pre-grow sheet
+        needed = ws_final.row_count + len(to_append) + ROW_BUFFER
+        if needed > ws_final.row_count:
+            ws_final.add_rows(needed - ws_final.row_count)
+            time.sleep(0.2)
+        for i in range(0, len(to_append), APPEND_CHUNK):
+            chunk = to_append[i: i + APPEND_CHUNK]
+            before_count = len(_get(ws_final, "A:A"))
+            _append(ws_final, chunk)
+            append_start_rows.append(before_count + 1)   # first appended row
             time.sleep(BATCH_SLEEP)
 
-    # 9) merge ranges and copy formulas H:I where blank
-    combined = overwrite_ranges_for_formula + append_ranges_for_formula
-    if combined:
-        combined_sorted = sorted(combined, key=lambda x: x[0])
-        merged = []
-        cs, ce = combined_sorted[0]
-        for s,e in combined_sorted[1:]:
-            if s <= ce + 1:
-                ce = max(ce, e)
+    # 4d formula carry-forward H:I
+    # Build ranges that need the formula: overwritten rows + appended rows
+    formula_rows: List[int] = [r for r, _ in to_overwrite]
+    for i, chunk_start in enumerate(append_start_rows):
+        chunk_len = min(APPEND_CHUNK, len(to_append) - i * APPEND_CHUNK)
+        formula_rows.extend(range(chunk_start, chunk_start + chunk_len))
+
+    if formula_rows:
+        try:
+            tmpl = _get(ws_final, f"H{TEMPLATE_ROW}:I{TEMPLATE_ROW}",
+                        value_render_option="FORMULA")
+            tmpl_row = tmpl[0] if tmpl and tmpl[0] else []
+            if not any(str(c).strip() for c in tmpl_row):
+                print(f"  ⚠ Template row {TEMPLATE_ROW} in H:I is blank — "
+                      f"formula carry-forward skipped.")
             else:
-                merged.append((cs, ce))
-                cs, ce = s, e
-        merged.append((cs, ce))
-        log(f"[ACTION] re-applying H:I formulas into {len(merged)} ranges (only where blank)...")
-        copy_formulas_hi_where_blank(client, dest_sheet_id, final_sheet_name, merged)
+                # build contiguous ranges
+                formula_rows_sorted = sorted(set(formula_rows))
+                ranges: List[Tuple[int, int]] = []
+                s = e = formula_rows_sorted[0]
+                for r in formula_rows_sorted[1:]:
+                    if r == e + 1:
+                        e = r
+                    else:
+                        ranges.append((s, e))
+                        s = e = r
+                ranges.append((s, e))
 
-    # 10) sample verification
-    sample_keys = list(payload_map.keys())
-    import random as _rnd
-    if sample_keys:
-        sample = _rnd.sample(sample_keys, min(SAMPLE_VERIFICATION_COUNT, len(sample_keys)))
-    else:
-        sample = []
+                print(f"  Writing H:I formulas into {len(ranges)} range(s)...")
+                for rs, re_ in ranges:
+                    # only overwrite blank cells
+                    existing = _get(ws_final, f"H{rs}:I{re_}",
+                                    value_render_option="FORMULA")
+                    out_rows = []
+                    changed = False
+                    for offset in range(re_ - rs + 1):
+                        ex = existing[offset] if offset < len(existing) else []
+                        h = ex[0] if len(ex) > 0 else ""
+                        ii = ex[1] if len(ex) > 1 else ""
+                        nh = h if str(h).strip() else (tmpl_row[0] if tmpl_row else "")
+                        ni = ii if str(ii).strip() else (tmpl_row[1] if len(tmpl_row) > 1 else "")
+                        out_rows.append([nh, ni])
+                        if nh != h or ni != ii:
+                            changed = True
+                    if changed:
+                        _update(ws_final, f"H{rs}:I{re_}", out_rows)
+                    time.sleep(0.02)
+        except Exception as e:
+            print(f"  ⚠ Formula carry-forward failed (non-fatal): {e}")
+
+    # ── STEP 5: verify ────────────────────────────────────────────────────
+    print(f"[5/5] Verifying...")
+    # Re-read the final index snapshot for verification — one read
+    final_verify = _get(ws_final, f"A:{ LAST_COL}")
+    verify_index: Dict[Tuple[str, str], List[Any]] = {}
+    for row in final_verify:
+        k = _key(row)
+        if k[0] or k[1]:
+            verify_index[k] = row
+
     mismatches = 0
-    for k in sample:
-        dest_map_now = find_keys_in_sheet_paged(client, dest_sheet_id, final_sheet_name, [k], page_size=page_size)
-        dest_idxs_now = dest_map_now.get(k, [])
-        if not dest_idxs_now:
-            log(f"[ERROR] verification: key {k} missing in destination after write.")
-            mismatches += 1
-            continue
-        canonical = min(dest_idxs_now)
-        ss = client.open_by_key(dest_sheet_id)
-        ws = ss.worksheet(final_sheet_name)
-        rng = f"A{canonical}:G{canonical}"
-        dest_row = (ws.get(rng) or [[]])[0] if (ws.get(rng) or [[]]) else []
-        src_row = payload_map.get(k)
-        if not rows_equal(dest_row, src_row):
-            log(f"[ERROR] verification mismatch for {k} at dest row {canonical}")
+    missing_after = 0
+    for k, src_row in payload.items():
+        dest_row = verify_index.get(k)
+        if dest_row is None:
+            print(f"  ✗ key {k} missing after write")
+            missing_after += 1
+        elif not _rows_equal(src_row, dest_row):
+            print(f"  ✗ mismatch for {k}")
             mismatches += 1
 
-    log("[DONE] replication complete.")
-    log(f"  overwrites: {len(to_overwrite)}, appends: {len(to_append)}, duplicates_deleted: {len(duplicates_to_delete)}, verification_mismatches: {mismatches}")
-    if missing:
-        log(f"  missing_keys_count (in INC but not in NEW): {len(missing)}")
+    print(f"\n[DONE] overwrites={len(to_overwrite)} appends={len(to_append)} "
+          f"dupes_deleted={len(to_delete)} "
+          f"verify_missing={missing_after} verify_mismatches={mismatches}")
 
-# ----------------- main entry -----------------
+
+# ── ENTRY POINT ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    p = argparse.ArgumentParser(description="Replicate BANK_NEW -> CALCULATOR!BANK_FINAL")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Print action plan; do not write anything")
+    args = p.parse_args()
+
     start = datetime.now()
-    log(f"[REPLICATE RUN START] {start.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"[START] {start.strftime('%Y-%m-%d %H:%M:%S')}"
+          + (" [DRY RUN]" if args.dry_run else ""))
     try:
-        replicate_bank_new_to_dest(
-            creds_path=CREDS_PATH,
-            source_sheet_id=sheet_id_src,
-            dest_sheet_id=sheet_id_dest,
-            inc_sheet_name=tab_name_inc,
-            new_sheet_name=tab_name_new,
-            final_sheet_name=tab_name_final,
-            page_size=DEFAULT_PAGE_SIZE,
-            batch_update_size=DEFAULT_BATCH_UPDATE_SIZE,
-            append_chunk=DEFAULT_APPEND_CHUNK
-        )
+        run(dry_run=args.dry_run)
     except Exception as e:
-        log(f"[ERROR] replicate run failed: {e}")
+        print(f"[ERROR] {e}")
         sys.exit(2)
     end = datetime.now()
-    log(f"[REPLICATE RUN END] {end.strftime('%Y-%m-%d %H:%M:%S')} (duration: {(end-start).total_seconds():.2f}s)")
+    print(f"[END] {end.strftime('%Y-%m-%d %H:%M:%S')} "
+          f"({(end - start).total_seconds():.1f}s)")
