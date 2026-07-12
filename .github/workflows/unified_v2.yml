@@ -22,6 +22,7 @@ on:
           - eod
           - midday
           - refresh
+          - normalize
 
 # Overlap safety: queue new runs until the current one finishes
 concurrency:
@@ -323,6 +324,11 @@ jobs:
               python3 fetch_holdings.py
               bash combined_main_run.sh
               bash combined_home_run.sh
+              echo "::endgroup::"
+            elif [ "$ACTION" = "normalize" ]; then
+              echo "::group::RUN: Normalize chain"
+              python3 refresh_ref_sheets_json.py
+              bash combined_normalize_run.sh
               echo "::endgroup::"
             else
               echo "::notice::action=$ACTION has no chain; exiting."
