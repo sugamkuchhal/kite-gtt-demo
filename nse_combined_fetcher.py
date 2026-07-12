@@ -119,67 +119,35 @@ class NSEBaseFetcher:
 
     def fetch_stock_info_yahoo(self, symbol: str) -> Optional[Dict[str, Any]]:
         """
-        Single symbol fetch from Yahoo. Returns a dict (Symbol kept as NSE:...).
-        Retries handled by caller wrapper with backoff.
+        Fetch only the 6 needed fields: Symbol, Company Name, Sector,
+        Industry, Current Price, Market Cap. One .info call, no .history.
         """
         raw_for_yahoo = self._symbol_for_yahoo(symbol)
         try:
-            ticker = yf.Ticker(raw_for_yahoo)
-            info = {}
-            # .info can be flaky — guard it
-            try:
-                info = ticker.info or {}
-            except Exception:
-                info = {}
+            info = yf.Ticker(raw_for_yahoo).info or {}
 
-            # robust current price: try history then fast_info / info
-            current_price = None
-            try:
-                hist = ticker.history(period="1d")
-                if not hist.empty:
-                    current_price = hist["Close"].iloc[-1]
-            except Exception:
-                current_price = None
+            current_price = (
+                info.get("currentPrice")
+                or info.get("regularMarketPrice")
+                or info.get("previousClose")
+            )
 
-            if current_price is None:
-                current_price = (
-                    getattr(ticker, "fast_info", {}) and ticker.fast_info.get("last_price")
-                ) or info.get("regularMarketPrice") or info.get("previousClose")
-
-            # A response with no price AND no company name means Yahoo is
-            # throttling us or returning a stub dict (e.g. {quoteType: EQUITY}).
-            # info being non-empty is NOT enough — Yahoo returns partial dicts
-            # while rate-limiting. Require at least a price OR a real name.
             if current_price is None and not info.get("longName") and not info.get("shortName"):
                 raise RuntimeError(
                     f"unusable Yahoo response for {symbol}: no price, no name "
                     f"(info keys: {list(info.keys())[:5]})"
                 )
 
-            result = {
-                "Symbol": symbol,  # keep NSE: prefix here everywhere
-                "Company_Name": info.get("longName") if info.get("longName") is not None else "",
-                "Sector": info.get("sector") if info.get("sector") is not None else "",
-                "Industry": info.get("industry") if info.get("industry") is not None else "",
-                "Market_Cap": info.get("marketCap"),
+            return {
+                "Symbol":        symbol,
+                "Company_Name":  info.get("longName") or info.get("shortName") or "",
+                "Sector":        info.get("sector")   or "",
+                "Industry":      info.get("industry") or "",
                 "Current_Price": current_price,
-                "Previous_Close": info.get("previousClose"),
-                "Day_High": info.get("dayHigh"),
-                "Day_Low": info.get("dayLow"),
-                "52_Week_High": info.get("fiftyTwoWeekHigh"),
-                "52_Week_Low": info.get("fiftyTwoWeekLow"),
-                "Volume": info.get("volume"),
-                "Avg_Volume": info.get("averageVolume"),
-                "PE_Ratio": info.get("trailingPE"),
-                "Dividend_Yield": info.get("dividendYield"),
-                "Profit_Margins": info.get("profitMargins"),
-                "Operating_Margins": info.get("operatingMargins"),
-                "EBITDA": info.get("ebitda"),
-                "Last_Updated": datetime.now().strftime("%Y-%m-%d")
+                "Market_Cap":    info.get("marketCap"),
+                "Last_Updated":  datetime.now().strftime("%Y-%m-%d"),
             }
-            return result
-        except Exception as e:
-            # bubble up to wrapper for retry/backoff
+        except Exception:
             raise
 
     def _fetch_with_backoff(self, symbol: str) -> Optional[Dict[str, Any]]:
@@ -250,40 +218,27 @@ class NSEBaseFetcher:
         df = pd.DataFrame(self.stock_data)
         if df.empty:
             return df
-        # normalize Nones -> np.nan for numeric conversions
         df = df.replace({None: np.nan}, inplace=False)
-        numeric_cols = ["Market_Cap", "Profit_Margins", "Operating_Margins", "EBITDA", "Volume", "Avg_Volume", "Current_Price"]
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-
-        # Derived metrics
+        # Market cap: raw value -> Cr.
         if "Market_Cap" in df.columns:
+            df["Market_Cap"] = pd.to_numeric(df["Market_Cap"], errors="coerce")
             df["Market_cap (in Cr.)"] = df["Market_Cap"] / 1e7
-        if "Profit_Margins" in df.columns:
-            df["Profit_Margins (%age)"] = df["Profit_Margins"] * 100
-        if "Operating_Margins" in df.columns:
-            df["Operating_Margins (%age)"] = df["Operating_Margins"] * 100
-        if "EBITDA" in df.columns:
-            df["EBITDA (in Cr.)"] = df["EBITDA"] / 1e7
-        if "Volume" in df.columns and "Current_Price" in df.columns:
-            df["Volume (in Cr.)"] = (df["Volume"] * df["Current_Price"]) / 1e7
-        if "Avg_Volume" in df.columns and "Current_Price" in df.columns:
-            df["Avg_Volume (in Cr.)"] = (df["Avg_Volume"] * df["Current_Price"]) / 1e7
-
-        # drop raw numeric intermediate cols
-        df.drop(columns=[c for c in ["Market_Cap", "Profit_Margins", "Operating_Margins", "EBITDA", "Volume", "Avg_Volume"] if c in df.columns], inplace=True, errors="ignore")
-
-        # Ensure Last_Updated is date format string DD-MMM-YYYY for sheet formatting consistency
+            df.drop(columns=["Market_Cap"], inplace=True)
+        if "Current_Price" in df.columns:
+            df["Current_Price"] = pd.to_numeric(df["Current_Price"], errors="coerce")
+        # Last_Updated as DD-MMM-YYYY string
         if "Last_Updated" in df.columns:
             try:
-                # current stored format is YYYY-MM-DD; convert to DD-MMM-YYYY (string form)
-                df["Last_Updated"] = pd.to_datetime(df["Last_Updated"], errors="coerce").dt.strftime("%d-%b-%Y")
+                df["Last_Updated"] = pd.to_datetime(
+                    df["Last_Updated"], errors="coerce"
+                ).dt.strftime("%d-%b-%Y")
             except Exception:
                 pass
-
-        # fill NaNs with empty strings for Sheets (we'll apply numeric formatting in Sheets)
         df = df.fillna("")
+        # enforce column order
+        cols = ["Symbol", "Company_Name", "Sector", "Industry",
+                "Current_Price", "Market_cap (in Cr.)", "Last_Updated"]
+        df = df[[c for c in cols if c in df.columns]]
         return df
 
     # ----- Google Sheets helpers -----
@@ -380,39 +335,15 @@ class NSEBaseFetcher:
         except Exception:
             logger.warning("Failed to set frozen header (gspread-formatting may be unavailable).")
 
-        # Apply number formatting where appropriate.
-        # We will map names to formatting rules per the spec.
-        # Strings: Symbol, Company_Name, Sector, Industry -> plain text (no formatting)
-        # Integers: (none mandatory in current DF)
-        # Numbers 2 decimals: Market_cap (in Cr.), Current_Price, Previous_Close, Day_High, Day_Low,
-        # 52_Week_High, 52_Week_Low, Volume (in Cr.), Avg_Volume (in Cr.), PE_Ratio, Dividend_Yield,
-        # Profit_Margins (%age), Operating_Margins (%age), EBITDA (in Cr.)
-        # Date: Last_Updated -> DD-MMM-YYYY
-
-        # build a col_name -> column_letter map
+        # Format numeric columns: Current_Price and Market_cap (in Cr.) to 2 decimals
         col_map = {col: self._col_letter(i) for i, col in enumerate(df.columns)}
-        number_cols = [
-            "Market_cap (in Cr.)", "Current_Price", "Previous_Close", "Day_High", "Day_Low",
-            "52_Week_High", "52_Week_Low", "Volume (in Cr.)", "Avg_Volume (in Cr.)",
-            "PE_Ratio", "Dividend_Yield", "Profit_Margins (%age)", "Operating_Margins (%age)", "EBITDA (in Cr.)"
-        ]
-        # Apply 2-decimal number format for present columns
-        for col in number_cols:
+        for col in ["Current_Price", "Market_cap (in Cr.)"]:
             if col in col_map:
-                rng = f"{col_map[col]}2:{col_map[col]}{len(df) + 1}"  # +1 because header occupies row1
+                rng = f"{col_map[col]}2:{col_map[col]}{len(df) + 1}"
                 try:
                     set_number_format(worksheet, rng, NumberFormat(type="NUMBER", pattern="0.00"))
                 except Exception:
-                    logger.debug(f"Could not set number format for {col} ({rng})")
-
-        # Date formatting for Last_Updated column
-        if "Last_Updated" in col_map:
-            rng = f"{col_map['Last_Updated']}2:{col_map['Last_Updated']}{len(df) + 1}"
-            try:
-                # pattern to show as DD-MMM-YYYY
-                set_number_format(worksheet, rng, NumberFormat(type="DATE", pattern="dd-mmm-yyyy"))
-            except Exception:
-                logger.debug("Could not set date format for Last_Updated")
+                    logger.debug(f"Could not set number format for {col}")
 
         logger.info(f"Upload to Google Sheets complete: https://docs.google.com/spreadsheets/d/{spreadsheet.id}")
 
