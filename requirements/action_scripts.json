@@ -61,5 +61,8 @@
     "ops_sort_kwk",
     "ops_sort_sip_reg",
     "gtt_processor"
+  ],
+  "teleport_full": [
+    "data_teleporter"
   ]
 }
