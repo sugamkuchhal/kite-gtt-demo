@@ -103,7 +103,7 @@ def _read(svc, spreadsheet_id: str, range_: str) -> List[List[Any]]:
         lambda: svc.spreadsheets().values().get(
             spreadsheetId=spreadsheet_id,
             range=range_,
-            valueRenderOption="UNFORMATTED_VALUE",
+            valueRenderOption="FORMATTED_VALUE",
         ).execute(),
         f"read {range_}",
     )
