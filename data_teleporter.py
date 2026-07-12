@@ -50,11 +50,11 @@ LAST_COL        = "F"            # A:F — DATE SYMBOL CLOSE LOW HIGH VOLUME
 FORMULA_COLS    = "H:I"          # carry-forward template from row 2
 TEMPLATE_ROW    = 2
 
-BATCH_SIZE      = 500
-APPEND_CHUNK    = 500
+BATCH_SIZE      = 2000         # 240k rows / 2000 = ~120 calls; well under 60/min at 1.5s sleep
+APPEND_CHUNK    = 2000
 ROW_BUFFER      = 100
 MAX_RETRIES     = 5
-BATCH_SLEEP     = 0.15
+BATCH_SLEEP     = 1.5          # ~40 write calls/min; Sheets quota is 60/min
 
 # ── AUTH ──────────────────────────────────────────────────────────────────────
 def _authorize() -> gspread.Client:
@@ -68,8 +68,10 @@ def _authorize() -> gspread.Client:
     return gspread.authorize(creds)
 
 # ── RETRY HELPERS ─────────────────────────────────────────────────────────────
-def _backoff(attempt: int, base: float = 1.0, cap: float = 30.0) -> None:
-    time.sleep(random.uniform(0, min(cap, base * (2 ** (attempt - 1)))))
+def _backoff(attempt: int, base: float = 2.0, cap: float = 60.0) -> None:
+    t = min(cap, base * (2 ** (attempt - 1)))
+    print(f"  ↻ backing off {t:.0f}s before retry...")
+    time.sleep(t)
 
 def _get(ws: gspread.Worksheet, rng: str, **kw) -> List[List[Any]]:
     for attempt in range(1, MAX_RETRIES + 1):
