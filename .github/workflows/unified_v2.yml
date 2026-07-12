@@ -23,6 +23,7 @@ on:
           - midday
           - refresh
           - normalize
+          - teleport_full
 
 # Overlap safety: queue new runs until the current one finishes
 concurrency:
@@ -329,6 +330,11 @@ jobs:
               echo "::group::RUN: Normalize chain"
               python3 refresh_ref_sheets_json.py
               bash combined_normalize_run.sh
+              echo "::endgroup::"
+            elif [ "$ACTION" = "teleport_full" ]; then
+              echo "::group::RUN: Teleport Full"
+              python3 refresh_ref_sheets_json.py
+              python3 data_teleporter.py --mode full
               echo "::endgroup::"
             else
               echo "::notice::action=$ACTION has no chain; exiting."
