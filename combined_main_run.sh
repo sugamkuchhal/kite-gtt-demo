@@ -13,15 +13,22 @@ echo "Running: Turtle Trading"
 python3 ops_sort.py --ref-sheets "TURTLE" --green-tab "GTT_List" --red-tab "Old_GTT_List" --yellow-tab "Action_List"
 
 if python3 "$(dirname "$0")/is_trigger_true.py" | grep -qi true; then
+
+    echo "Running: NSE_Full_Stock_Data"
+    python3 nse_combined_fetcher.py --mode stock --worksheet "NSE_Full_Stock_Data" --max-workers 3 --batch-size 50
+    echo ""
+
     echo "Running: KWK"
     python3 ops_sort.py --ref-sheets "KWK" --green-tab "MKT_List" --red-tab "OLD_MKT_List" --yellow-tab "Action_List"
     python3 ops_sort_kwk.py --ref-sheets "KWK" --kwk-sheet "KWK" --action-sheet "Action_List" --special-target-ref-sheets "PORTFOLIO" --special-target-sheet "SPECIAL_TARGET_KWK_SIP_REG"
-
     echo ""
+
     echo "Running: SIP_REG"
     python3 ops_sort.py --ref-sheets "KWK" --green-tab "SIP_REG_List" --red-tab "OLD_SIP_REG_List" --yellow-tab "Action_SIP_REG_List"
     python3 ops_sort_sip_reg.py --ref-sheets "KWK" --action-sheet "OLD_SIP_REG_List" --special-target-ref-sheets "PORTFOLIO" --special-target-sheet "SPECIAL_TARGET_KWK_SIP_REG" --uncheck
+    echo ""
 
+    echo "Running: Market Orders"
     python3 gtt_processor.py --ref-sheets "PORTFOLIO" --sheet-name "MKT_INS" --market-order
     echo ""
 fi
