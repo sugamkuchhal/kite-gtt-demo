@@ -5,13 +5,9 @@ remover_old_tickers.py
 Pure sheet actuator for the removals process — no email/Telegram here;
 comms are owned by algo_tickers_mailer.py, which imports run_removals().
 
-Step 1 — REMOVALS tab (ref sheet: TICKER)
-  * Column A holds the pending-removals list (data from row 2).
-  * Column B is formula-driven; the exact text "CAN REMOVE NOW"
-    flags a ticker as removable. Cell B1 is the removable count.
-  * Flagged tickers are collected, then column A is compacted upward
-    (flagged rows dropped, order preserved) and trailing cells cleared.
-  * Column B is never written to (formulas stay intact).
+Detection — Master_Live tab (ref sheet: TICKER)
+  * Cell H2 holds a formula-driven count. When > 0, healers are triggered.
+  * H3 and down contain the tickers to be removed.
 
 Step 2 — FEED sheet tabs (ref sheet: FEED)
   * Tabs: SGST_FILTERED_TICKERS, SUPER_FILTERED_TICKERS,
@@ -37,9 +33,10 @@ from ref_sheets_utils import resolve_sheet_id
 # ==========================
 # Config (constants)
 # ==========================
-REMOVALS_REF = "TICKER"
-REMOVALS_TAB = "REMOVALS"
-CAN_REMOVE_TEXT = "CAN REMOVE NOW"
+MASTER_LIVE_REF = "TICKER"
+MASTER_LIVE_TAB = "Master_Live"
+MASTER_LIVE_SIGNAL_CELL = "H2"
+MASTER_LIVE_TICKER_START = "H3"
 
 FEED_REF = "FEED"
 FEED_TABS = [
@@ -62,61 +59,20 @@ def get_client():
     return gspread.authorize(creds)
 
 
-def validate_removals_header(ws):
-    """Fail loudly if the REMOVALS tab layout has changed."""
-    a1 = (ws.acell("A1").value or "").strip().upper()
-    if a1 != "REMOVALS":
-        raise RuntimeError(
-            f"Header validation failed on '{REMOVALS_TAB}' tab: "
-            f"expected 'REMOVALS' in A1, found '{a1}'"
-        )
-    logging.info("Header validation passed on '%s' tab.", REMOVALS_TAB)
-
-
-def process_removals_tab(client):
+def read_master_live_tickers(client):
     """
-    Returns the list of tickers flagged CAN REMOVE NOW, after compacting
-    column A of the REMOVALS tab (flagged rows removed, order preserved).
+    Reads tickers to remove from Master_Live!H3 downward (ref sheet: TICKER).
+    Returns a list of non-empty ticker strings.
     """
-    sheet_id = resolve_sheet_id(REMOVALS_REF)
-    ws = client.open_by_key(sheet_id).worksheet(REMOVALS_TAB)
-
-    validate_removals_header(ws)
-
-    values = ws.get_values("A2:B")  # ragged: rows may have 1 or 2 cells
-    old_len = len(values)
-
-    keep, remove = [], []
-    for i, row in enumerate(values):
-        ticker = (row[0] if len(row) > 0 else "").strip()
-        flag = (row[1] if len(row) > 1 else "").strip().upper()
-        if not ticker:
-            continue
-        if flag == CAN_REMOVE_TEXT:
-            remove.append(ticker)
-            logging.info("Flagged for removal: %s (row %d)", ticker, i + 2)
-        else:
-            keep.append(ticker)
-
-    if not remove:
-        logging.info("No '%s' rows found — nothing to remove.", CAN_REMOVE_TEXT)
-        return []
-
-    # Write compacted list back to column A, then clear trailing cells.
-    if keep:
-        ws.update(
-            f"A2:A{len(keep) + 1}",
-            [[t] for t in keep],
-            value_input_option="RAW",
-        )
-    if old_len > len(keep):
-        ws.batch_clear([f"A{len(keep) + 2}:A{old_len + 1}"])
-
+    sheet_id = resolve_sheet_id(MASTER_LIVE_REF)
+    ws = client.open_by_key(sheet_id).worksheet(MASTER_LIVE_TAB)
+    values = ws.get_values(f"{MASTER_LIVE_TICKER_START}:H")
+    removed = [row[0].strip() for row in values if row and row[0].strip()]
     logging.info(
-        "REMOVALS tab compacted: %d removed, %d remaining.",
-        len(remove), len(keep),
+        "Read %d ticker(s) from %s!%s: %s",
+        len(removed), MASTER_LIVE_TAB, MASTER_LIVE_TICKER_START, ", ".join(removed),
     )
-    return remove
+    return removed
 
 
 def purge_feed_tab(client, sheet_id, tab_name, remove_set):
@@ -174,9 +130,9 @@ def run_removals():
     """
     Full removals cycle. Returns a result dict:
       {
-        "removed": [tickers pulled off the REMOVALS tab],
+        "removed": [tickers read from Master_Live!H3:H],
         "tabs": [per-tab result dicts (see purge_feed_tab)],
-        "error": None | str  (fatal error in step 1, if any)
+        "error": None | str  (fatal error reading ticker list, if any)
       }
     A per-tab failure is recorded in that tab's result dict and the
     remaining tabs still run.
@@ -186,14 +142,15 @@ def run_removals():
     client = get_client()
 
     try:
-        removed = process_removals_tab(client)
+        removed = read_master_live_tickers(client)
     except Exception as e:
-        logging.exception("REMOVALS tab processing failed: %s", e)
-        result["error"] = f"REMOVALS tab processing failed: {e}"
+        logging.exception("Master_Live ticker read failed: %s", e)
+        result["error"] = f"Master_Live ticker read failed: {e}"
         return result
 
     result["removed"] = removed
     if not removed:
+        logging.info("No tickers found in Master_Live!%s — nothing to remove.", MASTER_LIVE_TICKER_START)
         return result
 
     logging.info("Tickers to purge from FEED tabs: %s", ", ".join(removed))
