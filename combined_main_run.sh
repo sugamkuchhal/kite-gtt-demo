@@ -14,9 +14,9 @@ python3 ops_sort.py --ref-sheets "TURTLE" --green-tab "GTT_List" --red-tab "Old_
 
 if python3 "$(dirname "$0")/is_trigger_true.py" | grep -qi true; then
 
-    echo "Running: NSE_Full_Stock_Data"
-    python3 nse_combined_fetcher.py --mode stock --worksheet "NSE_Full_Stock_Data" --max-workers 3 --batch-size 50
-    echo ""
+#    echo "Running: NSE_Full_Stock_Data"
+#    python3 nse_combined_fetcher.py --mode stock --worksheet "NSE_Full_Stock_Data" --max-workers 3 --batch-size 50
+#    echo ""
 
     echo "Running: KWK"
     python3 ops_sort.py --ref-sheets "KWK" --green-tab "MKT_List" --red-tab "OLD_MKT_List" --yellow-tab "Action_List"
