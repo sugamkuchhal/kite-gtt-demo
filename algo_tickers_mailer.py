@@ -41,8 +41,8 @@ SERVICE_CREDS = str(get_creds_path())
 # maintained by sheet formulas. When any signal > 0, the mailer runs the
 # triggered healers, waits for formulas to heal, re-reads the checklist,
 # and sends a single combined before/healing/after email.
-REMOVALS_TAB = "REMOVALS"
-REMOVALS_SIGNAL_CELL = "B1"          # count of tickers flagged CAN REMOVE NOW
+REMOVALS_TAB = "Master_Live"
+REMOVALS_SIGNAL_CELL = "H2"          # count of tickers pending removal
 NORMALIZE_SIGNAL_CELL = "D1"         # on the Checklist tab; SUMPRODUCT trigger
 SIP_SIGNAL_REF = "KWK"               # profitable SIP REG signal lives on the KWK sheet
 SIP_SIGNAL_TAB = "OLD_SIP_REG_List"
