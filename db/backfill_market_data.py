@@ -2,22 +2,22 @@
 backfill_market_data.py — One-time backfill of market_data from yfinance.
 
 Sources:
-  - nse_stock_list.txt       (STOCK tickers)
-  - nse_etf_list.txt         (ETF tickers)
+  - nse_stock_list.txt            (STOCK tickers)
+  - nse_etf_list.txt              (ETF tickers)
   - PORTFOLIO > DELISTED > col C  (delisted STOCK tickers, NSE:SYMBOL format)
 
 Fetches daily OHLCV from yfinance from 2024-01-01 to today.
 Upserts into db/trading.db > market_data table.
-Sends email report with validation results.
+Retries critical failures up to 3 times with exponential backoff.
+Sends email report with severity-split results.
 
-Usage:
-    python3 db/backfill_market_data.py                          # run all modes
-    python3 db/backfill_market_data.py --mode-stock             # stocks only
-    python3 db/backfill_market_data.py --mode-etf               # ETFs only
-    python3 db/backfill_market_data.py --mode-delisted          # delisted only
-    python3 db/backfill_market_data.py --mode-stock --mode-etf  # combine modes
-    python3 db/backfill_market_data.py --dry-run                # show tickers, no writes
-    python3 db/backfill_market_data.py --batch-size 5           # slower, more peaceful
+Flags:
+    --mode-stock        Fetch STOCK tickers only
+    --mode-etf          Fetch ETF tickers only
+    --mode-delisted     Fetch DELISTED tickers only
+    (no mode flags)     Fetch all — STOCK + ETF + DELISTED
+    --dry-run           Show tickers, no DB writes, no email
+    --batch-size N      Tickers per batch (default 10, sleep 3s between)
 """
 
 import argparse
@@ -61,9 +61,13 @@ SMTP_SERVER       = "smtp.gmail.com"
 SMTP_PORT         = 587
 TO_EMAIL          = "sugam.kuchhal.iimc@gmail.com"
 
-# Validation thresholds
-MIN_EXPECTED_ROWS = 300     # ~18 months of trading days from 2024-01-01
-MAX_STALE_DAYS    = 7       # last DB date should be within this many calendar days
+# Validation
+MIN_EXPECTED_ROWS = 300     # warning only — not critical
+MAX_STALE_DAYS    = 7       # critical if last date older than this
+
+# Retry
+MAX_RETRIES       = 3
+RETRY_BACKOFF     = [5, 15, 45]   # seconds between retries
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
@@ -107,15 +111,12 @@ def _load_delisted(creds_path: Path) -> list[tuple[str, str]]:
 
 def load_tickers(run_stock: bool, run_etf: bool, run_delisted: bool) -> list[tuple[str, str]]:
     tickers: dict[str, str] = {}
-
     if run_stock:
         for symbol, t in _load_txt(STOCK_LIST, "STOCK"):
             tickers[symbol] = t
-
     if run_etf:
         for symbol, t in _load_txt(ETF_LIST, "ETF"):
             tickers[symbol] = t
-
     if run_delisted:
         try:
             for symbol, t in _load_delisted(get_creds_path()):
@@ -139,7 +140,11 @@ def _to_yf_symbol(symbol: str) -> str:
     return symbol.replace("NSE:", "") + ".NS"
 
 
-def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
+def fetch_ohlcv(symbol: str) -> tuple[pd.DataFrame | None, str | None]:
+    """
+    Fetches OHLCV from 2024-01-01 to today.
+    Returns (DataFrame, None) on success or (None, error_reason) on failure.
+    """
     yf_sym = _to_yf_symbol(symbol)
     try:
         df = yf.download(
@@ -151,8 +156,7 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
             progress=False,
         )
         if df.empty:
-            log.warning(f"  No data returned for {symbol}")
-            return None
+            return None, "No data returned from yfinance"
 
         df = df.reset_index()
         if isinstance(df.columns, pd.MultiIndex):
@@ -169,11 +173,14 @@ def fetch_ohlcv(symbol: str) -> pd.DataFrame | None:
         df["volume"] = (df["volume"] * df["close"]) / 1e7
         df = df[["date", "close", "low", "high", "volume"]].copy()
         df = df.dropna(subset=["close"])
-        return df
+
+        if df.empty:
+            return None, "All rows dropped after cleaning"
+
+        return df, None
 
     except Exception as e:
-        log.error(f"  Failed to fetch {symbol}: {e}")
-        return None
+        return None, str(e)
 
 
 # ── DB upsert ─────────────────────────────────────────────────────────────────
@@ -202,44 +209,112 @@ def upsert_to_db(symbol: str, ticker_type: str, df: pd.DataFrame) -> int:
 
 # ── Validation ────────────────────────────────────────────────────────────────
 
-def validate_ticker(symbol: str) -> list[str]:
+def validate_ticker(symbol: str) -> tuple[list[str], list[str]]:
     """
-    Runs post-upsert checks for a ticker. Returns list of warning strings.
-    Checks:
-      1. Row count below minimum
-      2. Last date is stale (> MAX_STALE_DAYS old)
-      3. Any null close prices
+    Returns (critical_issues, warnings) for a ticker after upsert.
+
+    Critical:
+      - Stale data: last date > MAX_STALE_DAYS old
+      - Null/zero values in any of: close, low, high, volume (any single row)
+
+    Warning:
+      - Row count below MIN_EXPECTED_ROWS
     """
-    warnings = []
-    today = datetime.now().date()
+    criticals = []
+    warnings  = []
+    today     = datetime.now().date()
 
     with get_conn() as conn:
-        row = conn.execute("""
+        summary = conn.execute("""
             SELECT
-                COUNT(*)                as row_count,
-                MAX(date)               as last_date,
-                SUM(CASE WHEN close IS NULL OR close = 0 THEN 1 ELSE 0 END) as bad_prices
+                COUNT(*)                                                    AS row_count,
+                MAX(date)                                                   AS last_date,
+                SUM(CASE WHEN close  IS NULL OR close  = 0 THEN 1 ELSE 0 END) AS bad_close,
+                SUM(CASE WHEN low    IS NULL OR low    = 0 THEN 1 ELSE 0 END) AS bad_low,
+                SUM(CASE WHEN high   IS NULL OR high   = 0 THEN 1 ELSE 0 END) AS bad_high,
+                SUM(CASE WHEN volume IS NULL OR volume = 0 THEN 1 ELSE 0 END) AS bad_volume
             FROM market_data
             WHERE symbol = ?
         """, (symbol,)).fetchone()
 
-    if not row or row["row_count"] == 0:
-        warnings.append("No rows found in DB after upsert")
-        return warnings
+    if not summary or summary["row_count"] == 0:
+        criticals.append("No rows found in DB after upsert")
+        return criticals, warnings
 
-    if row["row_count"] < MIN_EXPECTED_ROWS:
-        warnings.append(f"Low row count: {row['row_count']} (expected ≥ {MIN_EXPECTED_ROWS})")
-
-    if row["last_date"]:
-        last_date = datetime.strptime(row["last_date"], "%Y-%m-%d").date()
+    # Critical: stale data
+    if summary["last_date"]:
+        last_date  = datetime.strptime(summary["last_date"], "%Y-%m-%d").date()
         stale_days = (today - last_date).days
         if stale_days > MAX_STALE_DAYS:
-            warnings.append(f"Stale data: last date is {row['last_date']} ({stale_days} days ago)")
+            criticals.append(
+                f"Stale data: last date is {summary['last_date']} ({stale_days} days ago)"
+            )
 
-    if row["bad_prices"] and row["bad_prices"] > 0:
-        warnings.append(f"Null/zero close prices: {row['bad_prices']} rows")
+    # Critical: null/zero per field
+    for field in ["close", "low", "high", "volume"]:
+        bad = summary[f"bad_{field}"]
+        if bad and bad > 0:
+            criticals.append(f"Null/zero {field}: {bad} row(s)")
 
-    return warnings
+    # Warning: low row count
+    if summary["row_count"] < MIN_EXPECTED_ROWS:
+        warnings.append(
+            f"Low row count: {summary['row_count']} (expected ≥ {MIN_EXPECTED_ROWS})"
+        )
+
+    return criticals, warnings
+
+
+# ── Retry logic ───────────────────────────────────────────────────────────────
+
+def fetch_and_upsert_with_retry(
+    symbol: str,
+    ticker_type: str,
+) -> tuple[int, str | None, list[str], list[str]]:
+    """
+    Fetches, upserts, and validates with up to MAX_RETRIES retries on critical failure.
+
+    Returns:
+        (rows_upserted, fatal_reason, critical_issues, warnings)
+        fatal_reason is None on success, string on permanent failure.
+    """
+    last_reason  = None
+    last_crits   = []
+    last_warns   = []
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        if attempt > 1:
+            sleep_secs = RETRY_BACKOFF[attempt - 2]
+            log.warning(f"  Retry {attempt}/{MAX_RETRIES} for {symbol} in {sleep_secs}s...")
+            time.sleep(sleep_secs)
+
+        # Fetch
+        df, fetch_error = fetch_ohlcv(symbol)
+        if df is None:
+            last_reason = fetch_error
+            log.error(f"  Attempt {attempt}: fetch failed — {fetch_error}")
+            continue
+
+        # Upsert
+        rows = upsert_to_db(symbol, ticker_type, df)
+        log.info(f"  Attempt {attempt}: ✅ {rows} rows upserted.")
+
+        # Validate
+        crits, warns = validate_ticker(symbol)
+        if not crits:
+            return rows, None, [], warns
+
+        # Critical issues found — log and retry
+        last_crits = crits
+        last_warns = warns
+        last_reason = None
+        for c in crits:
+            log.warning(f"  Attempt {attempt}: ⚠️  Critical: {c}")
+
+    # All retries exhausted
+    if last_reason:
+        return 0, last_reason, [], []
+    return 0, f"Critical issues unresolved after {MAX_RETRIES} attempts", last_crits, last_warns
 
 
 # ── Email ─────────────────────────────────────────────────────────────────────
@@ -258,12 +333,13 @@ def _load_smtp_password() -> str | None:
 
 
 def send_email_report(
-    modes_run: list[str],
-    total: int,
-    succeeded: int,
-    total_rows: int,
-    failed: list[tuple[str, str]],       # [(symbol, reason)]
-    warnings: dict[str, list[str]],      # {symbol: [warning, ...]}
+    modes_run:    list[str],
+    total:        int,
+    succeeded:    int,
+    total_rows:   int,
+    fatal:        list[tuple[str, str]],          # [(symbol, reason)]
+    criticals:    dict[str, list[str]],            # {symbol: [issue, ...]}
+    warnings:     dict[str, list[str]],            # {symbol: [warning, ...]}
     duration_secs: float,
 ):
     smtp_password = _load_smtp_password()
@@ -271,12 +347,12 @@ def send_email_report(
         log.warning("No SMTP password — skipping email report.")
         return
 
-    now_str   = datetime.now().strftime("%d %b %Y %H:%M")
-    has_issues = bool(failed or warnings)
-    status     = "⚠️ Issues Found" if has_issues else "✅ All Clear"
+    now_str    = datetime.now().strftime("%d %b %Y %H:%M")
+    has_crits  = bool(fatal or criticals)
+    has_warns  = bool(warnings)
+    status     = "🔴 Critical Issues" if has_crits else ("⚠️ Warnings" if has_warns else "✅ All Clear")
     subject    = f"[Backfill] {status} — {now_str} | {succeeded}/{total} tickers"
 
-    # ── HTML ──────────────────────────────────────────────────────────────────
     def _section(title: str, color: str, body: str) -> str:
         return f"""
         <div style="margin:16px 0;padding:14px 18px;border-left:4px solid {color};
@@ -287,55 +363,76 @@ def send_email_report(
         </div>"""
 
     def _table(headers: list[str], rows: list[list[str]]) -> str:
-        ths = "".join(f'<th style="text-align:left;padding:6px 12px;'
-                      f'background:#f0f0f0;font-size:12px;">{h}</th>' for h in headers)
+        ths = "".join(
+            f'<th style="text-align:left;padding:6px 12px;background:#f0f0f0;'
+            f'font-size:12px;">{h}</th>' for h in headers
+        )
         trs = ""
         for i, r in enumerate(rows):
-            bg = "#ffffff" if i % 2 == 0 else "#f9f9f9"
-            tds = "".join(f'<td style="padding:6px 12px;font-size:12px;">{v}</td>' for v in r)
+            bg  = "#ffffff" if i % 2 == 0 else "#f9f9f9"
+            tds = "".join(
+                f'<td style="padding:6px 12px;font-size:12px;">{v}</td>' for v in r
+            )
             trs += f'<tr style="background:{bg};">{tds}</tr>'
-        return (f'<table style="border-collapse:collapse;width:100%;'
-                f'border:1px solid #e0e0e0;">'
-                f'<thead><tr>{ths}</tr></thead><tbody>{trs}</tbody></table>')
+        return (
+            f'<table style="border-collapse:collapse;width:100%;border:1px solid #e0e0e0;">'
+            f'<thead><tr>{ths}</tr></thead><tbody>{trs}</tbody></table>'
+        )
 
-    # Summary section
-    summary_rows = [
-        ["Modes run",        ", ".join(modes_run)],
-        ["Tickers attempted", str(total)],
-        ["Succeeded",         str(succeeded)],
-        ["Failed",            str(len(failed))],
-        ["Rows upserted",     f"{total_rows:,}"],
-        ["Duration",          f"{duration_secs:.0f}s"],
-    ]
+    # Summary
     summary_html = _section(
         "📊 Summary", "#1a73e8",
-        _table(["Field", "Value"], summary_rows)
+        _table(["Field", "Value"], [
+            ["Modes run",          ", ".join(modes_run)],
+            ["Tickers attempted",  str(total)],
+            ["Succeeded",          str(succeeded)],
+            ["Critical failures",  str(len(fatal) + len(criticals))],
+            ["Warnings",           str(len(warnings))],
+            ["Rows upserted",      f"{total_rows:,}"],
+            ["Duration",           f"{duration_secs:.0f}s"],
+        ])
     )
 
-    # Failed section
-    failed_html = ""
-    if failed:
-        failed_html = _section(
-            f"❌ Failed Fetches ({len(failed)})", "#d93025",
-            _table(["Symbol", "Reason"], [[s, r] for s, r in failed])
+    # Critical: fatal fetches
+    fatal_html = ""
+    if fatal:
+        fatal_html = _section(
+            f"🔴 Fatal — No Data Fetched ({len(fatal)})", "#d93025",
+            _table(
+                ["Symbol", "Reason"],
+                [[s, r] for s, r in fatal]
+            )
         )
 
-    # Warnings section
+    # Critical: validation failures after retries
+    crit_html = ""
+    if criticals:
+        rows = []
+        for sym, issues in sorted(criticals.items()):
+            for issue in issues:
+                rows.append([sym, issue])
+        crit_html = _section(
+            f"🔴 Critical — Validation Failed After Retries ({len(rows)} issues)", "#d93025",
+            _table(["Symbol", "Issue"], rows)
+        )
+
+    # Warnings: low row count
     warn_html = ""
     if warnings:
-        warn_rows = []
+        rows = []
         for sym, warns in sorted(warnings.items()):
             for w in warns:
-                warn_rows.append([sym, w])
+                rows.append([sym, w])
         warn_html = _section(
-            f"⚠️ Validation Warnings ({len(warn_rows)})", "#f9a825",
-            _table(["Symbol", "Warning"], warn_rows)
+            f"⚠️ Warnings — Low Row Count ({len(rows)})", "#f9a825",
+            _table(["Symbol", "Warning"], rows)
         )
 
-    all_clear_html = ""
-    if not has_issues:
-        all_clear_html = _section(
-            "✅ All tickers validated successfully", "#0f9d58", ""
+    # All clear
+    clear_html = ""
+    if not has_crits and not has_warns:
+        clear_html = _section(
+            "✅ All tickers validated successfully — no issues found.", "#0f9d58", ""
         )
 
     html = f"""
@@ -346,9 +443,10 @@ def send_email_report(
         </h2>
         <p style="color:#666;font-size:13px;">Run at {now_str}</p>
         {summary_html}
-        {failed_html}
+        {fatal_html}
+        {crit_html}
         {warn_html}
-        {all_clear_html}
+        {clear_html}
     </body></html>
     """
 
@@ -369,7 +467,7 @@ def send_email_report(
 
         log.info(f"✅ Email report sent to {TO_EMAIL}")
     except Exception as e:
-        log.error(f"Failed to send email report: {e}")
+        log.error(f"Failed to send email: {e}")
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -379,14 +477,13 @@ def main():
     parser.add_argument("--mode-stock",    action="store_true", help="Fetch STOCK tickers.")
     parser.add_argument("--mode-etf",      action="store_true", help="Fetch ETF tickers.")
     parser.add_argument("--mode-delisted", action="store_true", help="Fetch DELISTED tickers.")
-    parser.add_argument("--dry-run",       action="store_true", help="Show tickers, no DB writes.")
+    parser.add_argument("--dry-run",       action="store_true", help="Show tickers, no writes.")
     parser.add_argument("--batch-size",    type=int, default=DEFAULT_BATCH)
     args = parser.parse_args()
 
-    # If no mode specified, run all
-    run_all     = not (args.mode_stock or args.mode_etf or args.mode_delisted)
-    run_stock   = run_all or args.mode_stock
-    run_etf     = run_all or args.mode_etf
+    run_all      = not (args.mode_stock or args.mode_etf or args.mode_delisted)
+    run_stock    = run_all or args.mode_stock
+    run_etf      = run_all or args.mode_etf
     run_delisted = run_all or args.mode_delisted
 
     modes_run = []
@@ -405,31 +502,32 @@ def main():
 
     total        = len(tickers)
     total_rows   = 0
-    failed       = []       # [(symbol, reason)]
-    warn_map     = {}       # {symbol: [warnings]}
+    fatal        = []           # [(symbol, reason)] — fetch never succeeded
+    crit_map     = {}           # {symbol: [critical issues]} — after all retries
+    warn_map     = {}           # {symbol: [warnings]}
     start_time   = time.time()
 
     log.info(f"Starting backfill — modes: {', '.join(modes_run)}")
-    log.info(f"Tickers: {total} | Start: {START_DATE} | Batch: {args.batch_size} | Sleep: {SLEEP_BETWEEN}s")
+    log.info(f"Tickers: {total} | Start: {START_DATE} | Batch: {args.batch_size} | "
+             f"Sleep: {SLEEP_BETWEEN}s | Max retries: {MAX_RETRIES}")
 
     for i, (symbol, ticker_type) in enumerate(tickers, 1):
         log.info(f"[{i}/{total}] {symbol} ({ticker_type})")
-        df = fetch_ohlcv(symbol)
 
-        if df is None or df.empty:
-            failed.append((symbol, "No data returned from yfinance"))
-            continue
+        rows, fatal_reason, crits, warns = fetch_and_upsert_with_retry(symbol, ticker_type)
 
-        rows = upsert_to_db(symbol, ticker_type, df)
-        total_rows += rows
-        log.info(f"  ✅ {rows} rows upserted.")
+        if fatal_reason and not crits:
+            # Fetch never returned data
+            fatal.append((symbol, fatal_reason))
+        elif crits:
+            # Data fetched but critical validation issues remain after retries
+            crit_map[symbol] = crits
+            total_rows += rows
+        else:
+            total_rows += rows
 
-        # Validate
-        ticker_warnings = validate_ticker(symbol)
-        if ticker_warnings:
-            warn_map[symbol] = ticker_warnings
-            for w in ticker_warnings:
-                log.warning(f"  ⚠️  {w}")
+        if warns:
+            warn_map[symbol] = warns
 
         if i % args.batch_size == 0 and i < total:
             log.info(f"  Batch {i // args.batch_size} done — sleeping {SLEEP_BETWEEN}s...")
@@ -439,22 +537,21 @@ def main():
     with get_conn() as conn:
         update_meta(conn, "market_data", total_rows)
 
-    duration = time.time() - start_time
-    succeeded = total - len(failed)
+    duration  = time.time() - start_time
+    succeeded = total - len(fatal) - len(crit_map)
 
     log.info(f"\n{'='*55}")
     log.info(f"✅ Backfill complete in {duration:.0f}s")
-    log.info(f"   Modes run:          {', '.join(modes_run)}")
-    log.info(f"   Tickers processed:  {succeeded}/{total}")
-    log.info(f"   Rows upserted:      {total_rows:,}")
-    log.info(f"   Validation warnings:{len(warn_map)}")
-    if failed:
-        log.warning(f"   Failed ({len(failed)}): {', '.join(s for s,_ in failed)}")
+    log.info(f"   Modes:             {', '.join(modes_run)}")
+    log.info(f"   Succeeded:         {succeeded}/{total}")
+    log.info(f"   Fatal failures:    {len(fatal)}")
+    log.info(f"   Critical issues:   {len(crit_map)}")
+    log.info(f"   Warnings:          {len(warn_map)}")
+    log.info(f"   Rows upserted:     {total_rows:,}")
 
-    # Send email report
     send_email_report(
         modes_run, total, succeeded, total_rows,
-        failed, warn_map, duration
+        fatal, crit_map, warn_map, duration
     )
 
 
