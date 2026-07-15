@@ -198,6 +198,7 @@ jobs:
         run: |
           sudo -E bash -lc '
             set -euo pipefail
+            export GH_TOKEN="${GH_TOKEN:-}"
             if [ -f .venv/bin/activate ]; then
               source .venv/bin/activate
             else
