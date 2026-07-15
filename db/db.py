@@ -62,9 +62,10 @@ CREATE TABLE IF NOT EXISTS market_data (
     close       REAL,
     low         REAL,
     high        REAL,
-    volume      REAL,                       -- Volume in Cr. (volume × close / 1e7)
-    type        TEXT,                       -- STOCK | ETF
-    updated_at  TEXT    NOT NULL,           -- ISO8601 UTC
+    volume        REAL,                     -- Volume in Cr. (volume × close / 1e7)
+    volume_filled INTEGER NOT NULL DEFAULT 0, -- 1 if volume was forward-filled (synthetic)
+    type          TEXT,                     -- STOCK | ETF
+    updated_at    TEXT    NOT NULL,         -- ISO8601 UTC
 
     PRIMARY KEY (date, symbol)
 );

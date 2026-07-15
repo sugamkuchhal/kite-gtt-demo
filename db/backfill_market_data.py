@@ -185,24 +185,64 @@ def fetch_ohlcv(symbol: str) -> tuple[pd.DataFrame | None, str | None]:
 
 # ── DB upsert ─────────────────────────────────────────────────────────────────
 
+def _forward_fill_volume(symbol: str, df: pd.DataFrame) -> pd.DataFrame:
+    """
+    For rows where volume is null or zero, forward fill from the last known
+    good volume in the DB, then from prior rows in the same DataFrame.
+    Marks filled rows with volume_filled=1.
+    """
+    df = df.copy()
+    if "volume_filled" not in df.columns:
+        df["volume_filled"] = 0
+
+    # Get last known good volume from DB for this symbol
+    last_good_volume = None
+    try:
+        with get_conn() as conn:
+            row = conn.execute("""
+                SELECT volume FROM market_data
+                WHERE symbol = ? AND volume > 0 AND volume_filled = 0
+                ORDER BY date DESC LIMIT 1
+            """, (symbol,)).fetchone()
+            if row:
+                last_good_volume = row["volume"]
+    except Exception:
+        pass
+
+    for i, row in df.iterrows():
+        vol = row.get("volume")
+        if vol is None or (isinstance(vol, float) and (vol != vol)) or vol == 0:
+            if last_good_volume is not None:
+                df.at[i, "volume"] = last_good_volume
+                df.at[i, "volume_filled"] = 1
+        else:
+            last_good_volume = vol
+            df.at[i, "volume_filled"] = 0
+
+    return df
+
+
 def upsert_to_db(symbol: str, ticker_type: str, df: pd.DataFrame) -> int:
+    df = _forward_fill_volume(symbol, df)
     now  = datetime.now(timezone.utc).isoformat()
     rows = [
         (row["date"], symbol, row["close"], row["low"],
-         row["high"], row["volume"], ticker_type, now)
+         row["high"], row.get("volume"), int(row.get("volume_filled", 0)),
+         ticker_type, now)
         for _, row in df.iterrows()
     ]
     with get_conn() as conn:
         conn.executemany("""
-            INSERT INTO market_data (date, symbol, close, low, high, volume, type, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO market_data (date, symbol, close, low, high, volume, volume_filled, type, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(date, symbol) DO UPDATE SET
-                close      = excluded.close,
-                low        = excluded.low,
-                high       = excluded.high,
-                volume     = excluded.volume,
-                type       = excluded.type,
-                updated_at = excluded.updated_at
+                close         = excluded.close,
+                low           = excluded.low,
+                high          = excluded.high,
+                volume        = excluded.volume,
+                volume_filled = excluded.volume_filled,
+                type          = excluded.type,
+                updated_at    = excluded.updated_at
         """, rows)
     return len(rows)
 
@@ -250,11 +290,16 @@ def validate_ticker(symbol: str) -> tuple[list[str], list[str]]:
                 f"Stale data: last date is {summary['last_date']} ({stale_days} days ago)"
             )
 
-    # Critical: null/zero per field
-    for field in ["close", "low", "high", "volume"]:
+    # Critical: null/zero close, low, high only
+    for field in ["close", "low", "high"]:
         bad = summary[f"bad_{field}"]
         if bad and bad > 0:
             criticals.append(f"Null/zero {field}: {bad} row(s)")
+
+    # Warning: null/zero volume (after forward fill — genuinely missing)
+    bad_vol = summary["bad_volume"]
+    if bad_vol and bad_vol > 0:
+        warnings.append(f"Null/zero volume: {bad_vol} row(s) — could not forward fill")
 
     # Warning: low row count
     if summary["row_count"] < MIN_EXPECTED_ROWS:
@@ -271,10 +316,10 @@ def _validate_dataframe(symbol: str, df: pd.DataFrame) -> list[str]:
     """
     Validates a fetched DataFrame BEFORE writing to DB.
     Returns list of critical issues found in the raw data.
-    Only checks fields that would be critical if written.
+    Only close, low, high are critical — volume is handled by forward fill.
     """
     criticals = []
-    for field in ["close", "low", "high", "volume"]:
+    for field in ["close", "low", "high"]:
         if field not in df.columns:
             criticals.append(f"Missing column: {field}")
             continue
