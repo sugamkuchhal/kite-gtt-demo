@@ -1,3 +1,10 @@
+import json
+import os
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from runtime_paths import SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT, DEFAULT_RECIPIENT_EMAIL, get_smtp_token_path
+
 from kiteconnect import KiteConnect, exceptions as kite_exceptions
 from kite_session import get_kite
 from fetch_google_gtt_instructions import fetch_gtt_instructions_batch, get_instructions_sheet
@@ -607,6 +614,87 @@ def process_gtt_batch(kite, start_row, instruction_sheet, data_sheet):
     processed_count = len(instructions)
     return raw_read, processed_count, failed_rows, conflict_rows
 
+
+# ── Market order email alert ───────────────────────────────────────────────────
+
+def _load_smtp_password():
+    path = str(get_smtp_token_path())
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data.get("smtp_password")
+    except Exception:
+        pass
+    return None
+
+
+def _send_market_order_email(orders, recipient=DEFAULT_RECIPIENT_EMAIL):
+    """
+    Send a single email listing all pending market orders that need manual placement.
+    `orders` is a list of dicts: {symbol, exchange, side, units, product, variety, row_num}
+    """
+    smtp_password = _load_smtp_password()
+    if not smtp_password:
+        logger.error("Cannot send market order email — SMTP password not available.")
+        return False
+
+    subject_date = datetime.datetime.today().strftime("%d-%b-%Y %H:%M")
+    subject = f"ACTION REQUIRED: Market Orders to Place — {subject_date}"
+
+    TH = 'style="border:1px solid #ccc;padding:8px;text-align:left;background:#f2f2f2;"'
+    TD = 'border:1px solid #ddd;padding:8px;'
+    rows_html = ""
+    for o in orders:
+        color = "#fde8e8" if o["side"] == "BUY" else "#e8f5e9"
+        rows_html += (
+            f'<tr style="background:{color};">'
+            f'<td style="{TD}">{o["row_num"]}</td>'
+            f'<td style="{TD}"><b>{o["symbol"]}</b></td>'
+            f'<td style="{TD}">{o["exchange"]}</td>'
+            f'<td style="{TD}"><b>{o["side"]}</b></td>'
+            f'<td style="{TD} text-align:right;">{o["units"]}</td>'
+            f'<td style="{TD}">{o["product"]}</td>'
+            f'<td style="{TD}">{o["variety"]}</td>'
+            f'</tr>'
+        )
+
+    html_body = f"""
+<p style="font-family:Arial,sans-serif;font-size:14px;">
+  <b>Market orders could not be placed automatically</b> (static IP restriction on Kite API).<br>
+  Please place the following orders manually on Kite:
+</p>
+<table style="border-collapse:collapse;width:100%;font-family:Arial,sans-serif;">
+  <thead><tr>
+    <th {TH}>Row</th><th {TH}>Symbol</th><th {TH}>Exchange</th>
+    <th {TH}>Side</th><th {TH}>Units</th><th {TH}>Product</th><th {TH}>Variety</th>
+  </tr></thead>
+  <tbody>{rows_html}</tbody>
+</table>
+<p style="font-family:Arial,sans-serif;font-size:12px;color:#555;">
+  Generated at {subject_date} IST. STATUS updated to "📧 email sent" on the sheet.
+</p>
+"""
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = SMTP_FROM
+    msg["To"] = recipient
+    msg.attach(MIMEText("Please view this email in an HTML-capable client.", "plain"))
+    msg.attach(MIMEText(html_body, "html"))
+
+    try:
+        with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=30) as srv:
+            srv.ehlo(); srv.starttls(); srv.ehlo()
+            srv.login(SMTP_USER, smtp_password)
+            srv.sendmail(SMTP_FROM, [recipient], msg.as_string())
+        logger.info(f"Market order alert email sent to {recipient} ({len(orders)} order(s)).")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send market order email: {e}")
+        return False
+
+
 def process_market_sheet(kite, worksheet, status_manager, logger):
     rows = worksheet.get_all_values()
     if not rows or len(rows) < 2:
@@ -619,26 +707,21 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
     ix_action = headers.index("ACTION")
     ix_status = headers.index("STATUS")
 
+    pending_orders = []
+
     for row_num, row in enumerate(rows[1:], start=2):
         try:
-
             raw_ticker = row[ix_ticker].strip()
             exchange, symbol = parse_ticker(raw_ticker)
 
             units = _int_from_number_like(row[ix_units])
-            
             if units <= 0:
                 update_status(status_manager, row_num, "⏭ skipped: invalid or empty UNITS")
                 continue
 
             side = normalize_type_for_matching(row[ix_action])
-
             if side not in ("BUY", "SELL"):
-                update_status(
-                    status_manager,
-                    row_num,
-                    f"❌ invalid ACTION for MARKET: {row[ix_action]}"
-                )
+                update_status(status_manager, row_num, f"❌ invalid ACTION for MARKET: {row[ix_action]}")
                 continue
 
             # Skip if STATUS already filled
@@ -648,25 +731,29 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
             product = "CNC"
             variety = resolve_order_variety()
 
-            resp = safe_api_call(
-                kite.place_order,
-                tradingsymbol=symbol,
-                exchange=exchange,
-                transaction_type=side,
-                quantity=units,
-                order_type="MARKET",
-                product=product,
-                variety=variety,
-                validity="DAY",
-            )
-
-            update_status(status_manager, row_num, "✅ market placed")
-            logger.info(f"Row {row_num}: MARKET {side} {symbol} x{units} placed")
+            pending_orders.append({
+                "row_num": row_num,
+                "symbol": symbol,
+                "exchange": exchange,
+                "side": side,
+                "units": units,
+                "product": product,
+                "variety": variety,
+            })
 
         except Exception as e:
             update_status(status_manager, row_num, f"❌ error: {e}")
-            logger.error(f"Row {row_num}: error placing MARKET order: {e}")
+            logger.error(f"Row {row_num}: error processing MARKET row: {e}")
 
+    if not pending_orders:
+        logger.info("No pending market orders to action.")
+        return
+
+    logger.info(f"Found {len(pending_orders)} pending market order(s) — sending email alert.")
+    email_ok = _send_market_order_email(pending_orders)
+    status_msg = "📧 email sent" if email_ok else "❌ email failed"
+    for o in pending_orders:
+        update_status(status_manager, o["row_num"], status_msg)
 
 def main(instruction_sheet=None, data_sheet=None, kite=None):
     """
