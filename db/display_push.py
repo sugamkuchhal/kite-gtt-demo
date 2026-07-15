@@ -138,7 +138,14 @@ def load_corporate_actions() -> tuple[list, list]:
 def write_tab(service, tab: str, headers: list, rows: list):
     """Clears tab and writes headers + rows."""
     range_name = f"{tab}!A1"
-    values     = [headers] + [[str(v) if v is not None else "" for v in r] for r in rows]
+    def _clean(v):
+        if v is None:
+            return ""
+        if isinstance(v, (int, float)):
+            return v
+        return str(v)
+
+    values = [headers] + [[_clean(v) for v in r] for r in rows]
 
     service.spreadsheets().values().clear(
         spreadsheetId=DB_VIEW_SHEET_ID,
