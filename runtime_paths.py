@@ -76,3 +76,5 @@ SMTP_SERVER      = "smtp.gmail.com"
 SMTP_PORT        = 587
 
 TELEGRAM_CHAT_ID = "182871861"
+
+DEFAULT_RECIPIENT_EMAIL = "sugam.kuchhal.iimc@gmail.com"
