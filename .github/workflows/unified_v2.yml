@@ -128,7 +128,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-          cache-dependency-path: requirements/full.txt
+          cache-dependency-path: requirements.txt
 
       - name: Write auth files (api_key/access_token)
         if: ${{ steps.plan.outputs.should_run == 'true' }}
@@ -140,7 +140,7 @@ jobs:
           echo "$API_KEY" > api_key.txt
           echo "$ACCESS_TOKEN" > access_token.txt
 
-      - name: Check token validity (kiteconnect only)
+      - name: Check token validity
         id: token_check
         if: ${{ steps.plan.outputs.should_run == 'true' }}
         env:
@@ -148,32 +148,15 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$ACTION" = "refresh" ]; then
-            echo "token_valid=false" >> "$GITHUB_OUTPUT"
             echo "need_login=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           python3 -m pip install --quiet --target .deps_check kiteconnect
           if PYTHONPATH=".deps_check${PYTHONPATH:+:$PYTHONPATH}" python3 ensure_token.py --check-only; then
-            echo "token_valid=true" >> "$GITHUB_OUTPUT"
             echo "need_login=false" >> "$GITHUB_OUTPUT"
           else
-            echo "token_valid=false" >> "$GITHUB_OUTPUT"
             echo "need_login=true" >> "$GITHUB_OUTPUT"
           fi
-
-      - name: Resolve dependency groups
-        id: deps
-        if: ${{ steps.plan.outputs.should_run == 'true' }}
-        env:
-          ACTION: ${{ steps.plan.outputs.action }}
-          COMMAND: ${{ steps.plan.outputs.command }}
-          NEED_LOGIN: ${{ steps.token_check.outputs.need_login }}
-        run: |
-          set -euo pipefail
-          python3 resolve_deps.py \
-            --action "$ACTION" \
-            --command "$COMMAND" \
-            --need-login "$NEED_LOGIN" >> "$GITHUB_OUTPUT"
 
       - name: Install Google Chrome
         if: ${{ steps.plan.outputs.should_run == 'true' && steps.token_check.outputs.need_login == 'true' }}
@@ -184,23 +167,14 @@ jobs:
           sudo dpkg -i google-chrome-stable_current_amd64.deb || sudo apt-get -fy install
           google-chrome --version
 
-      - name: Create virtualenv and install deps
+      - name: Install dependencies
         if: ${{ steps.plan.outputs.should_run == 'true' }}
         run: |
-          if [ "${{ steps.deps.outputs.packages_empty }}" = "true" ]; then
-            echo "::notice::No external packages required; skipping venv creation."
-            exit 0
-          fi
+          set -euo pipefail
           python3 -m venv .venv
-          if [ "${{ steps.deps.outputs.use_full }}" = "true" ]; then
-            .venv/bin/pip install -r "${{ steps.deps.outputs.req_file }}"
-          else
-            if [ -n "${{ steps.deps.outputs.packages }}" ]; then
-              .venv/bin/pip install ${{ steps.deps.outputs.packages }}
-            fi
-          fi
+          .venv/bin/pip install -r requirements.txt
 
-      - name: Recreate non-auth secret files (repo root + Mac path mirror)
+      - name: Recreate non-auth secret files
         if: ${{ steps.plan.outputs.should_run == 'true' && steps.plan.outputs.action != 'refresh' }}
         env:
           CREDS_JSON: ${{ secrets.CREDS_JSON }}
@@ -208,14 +182,9 @@ jobs:
           TELEGRAM_TOKEN_JSON: ${{ secrets.TELEGRAM_TOKEN_JSON }}
         run: |
           set -euo pipefail
-          MACDIR="/Users/sugamkuchhal/Documents/kite-gtt-demo"
-          sudo mkdir -p "$MACDIR" || true
           [ -n "$CREDS_JSON" ] && printf '%s' "$CREDS_JSON" > creds.json
           [ -n "$SMTP_TOKEN_JSON" ] && printf '%s' "$SMTP_TOKEN_JSON" > smtp_token.json
           [ -n "$TELEGRAM_TOKEN_JSON" ] && printf '%s' "$TELEGRAM_TOKEN_JSON" > telegram_token.json
-          [ -n "$CREDS_JSON" ] && printf '%s' "$CREDS_JSON" | sudo tee "$MACDIR/creds.json" >/dev/null || true
-          [ -n "$SMTP_TOKEN_JSON" ] && printf '%s' "$SMTP_TOKEN_JSON" | sudo tee "$MACDIR/smtp_token.json" >/dev/null || true
-          [ -n "$TELEGRAM_TOKEN_JSON" ] && printf '%s' "$TELEGRAM_TOKEN_JSON" | sudo tee "$MACDIR/telegram_token.json" >/dev/null || true
           ls -l creds.json smtp_token.json api_key.txt access_token.txt || true
 
       - name: Refresh ref_sheets.json
