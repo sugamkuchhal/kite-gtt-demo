@@ -265,6 +265,25 @@ def validate_ticker(symbol: str) -> tuple[list[str], list[str]]:
     return criticals, warnings
 
 
+# ── Pre-write DataFrame validation ───────────────────────────────────────────
+
+def _validate_dataframe(symbol: str, df: pd.DataFrame) -> list[str]:
+    """
+    Validates a fetched DataFrame BEFORE writing to DB.
+    Returns list of critical issues found in the raw data.
+    Only checks fields that would be critical if written.
+    """
+    criticals = []
+    for field in ["close", "low", "high", "volume"]:
+        if field not in df.columns:
+            criticals.append(f"Missing column: {field}")
+            continue
+        bad = df[field].isna().sum() + (df[field] == 0).sum()
+        if bad > 0:
+            criticals.append(f"Null/zero {field}: {int(bad)} row(s) in fetched data")
+    return criticals
+
+
 # ── Retry logic ───────────────────────────────────────────────────────────────
 
 def fetch_and_upsert_with_retry(
@@ -286,36 +305,42 @@ def fetch_and_upsert_with_retry(
         if attempt > 1:
             sleep_secs = RETRY_BACKOFF[attempt - 2]
             log.warning(f"  Retry {attempt}/{MAX_RETRIES} for {symbol} in {sleep_secs}s...")
-            # Purge bad rows before retry — ensures clean slate, not overwrite of bad data
-            with get_conn() as conn:
-                deleted = conn.execute(
-                    "DELETE FROM market_data WHERE symbol = ?", (symbol,)
-                ).rowcount
-            log.info(f"  Purged {deleted} existing rows for {symbol} before retry.")
             time.sleep(sleep_secs)
 
-        # Fetch
+        # Fetch fresh data
         df, fetch_error = fetch_ohlcv(symbol)
         if df is None:
             last_reason = fetch_error
             log.error(f"  Attempt {attempt}: fetch failed — {fetch_error}")
             continue
 
-        # Upsert
+        # Validate the fetched data BEFORE writing to DB
+        # Only upsert if the new fetch is clean — never overwrite good DB data with bad fetch
+        temp_crits = _validate_dataframe(symbol, df)
+        if temp_crits:
+            last_crits = temp_crits
+            last_reason = None
+            for c in temp_crits:
+                log.warning(f"  Attempt {attempt}: fetched data has critical issue — {c}")
+            continue
+
+        # Clean fetch — upsert into DB
         rows = upsert_to_db(symbol, ticker_type, df)
         log.info(f"  Attempt {attempt}: ✅ {rows} rows upserted.")
 
-        # Validate
+        # Validate what's now in the DB
         crits, warns = validate_ticker(symbol)
         if not crits:
             return rows, None, [], warns
 
-        # Critical issues found — log and retry
+        # DB still has issues (e.g. pre-existing bad rows not covered by this fetch)
         last_crits = crits
         last_warns = warns
         last_reason = None
         for c in crits:
-            log.warning(f"  Attempt {attempt}: ⚠️  Critical: {c}")
+            log.warning(f"  Attempt {attempt}: ⚠️  DB critical: {c}")
+        # Don't retry further — new data was clean, DB issues are pre-existing
+        return rows, None, crits, warns
 
     # All retries exhausted
     if last_reason:
