@@ -6,13 +6,20 @@ atexit.register(log_end, _RUN_CTX)
 # fetch_holdings.py
 
 import logging
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
 from kite_session import get_kite
 
 import gspread
 from google.oauth2.service_account import Credentials
 
-from runtime_paths import get_creds_path
+from runtime_paths import get_creds_path, repo_root
 from ref_sheets_utils import resolve_sheet_id
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "db"))
+from db import get_conn, init_db, update_meta
+from git_utils import commit_file_if_changed
 
 CREDS_PATH = str(get_creds_path())
 ref_sheets = "PORTFOLIO"
@@ -94,11 +101,48 @@ def check_portfolio_discrepancy():
     except Exception as e:
         logging.error(f"❌ Error while checking portfolio discrepancy: {e}")
 
+def write_holdings_to_db(holdings):
+    """Writes holdings snapshot to DB — DELETE + INSERT on every fetch."""
+    if not holdings:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    rows = [(
+        h.get("tradingsymbol"),
+        h.get("isin"),
+        h.get("quantity"),
+        h.get("used_quantity"),
+        h.get("t1_quantity"),
+        h.get("average_price"),
+        h.get("last_price"),
+        h.get("pnl"),
+        h.get("product"),
+        h.get("exchange"),
+        now,
+    ) for h in holdings]
+    with get_conn() as conn:
+        conn.execute("DELETE FROM holdings")
+        conn.executemany("""
+            INSERT INTO holdings (
+                tradingsymbol, isin, quantity, used_quantity, t1_quantity,
+                average_price, last_price, pnl, product, exchange, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, rows)
+        update_meta(conn, "holdings", len(rows))
+    logging.info("✅ %d holdings written to DB.", len(rows))
+
+
 if __name__ == "__main__":
     try:
         holdings = fetch_holdings()
         write_to_gsheet(holdings)
         check_portfolio_discrepancy()
+        init_db()
+        write_holdings_to_db(holdings)
+        commit_file_if_changed(
+            filepath="db/trading.db",
+            message="chore: update trading.db — holdings [skip ci]",
+            repo_root=repo_root(),
+        )
         raise SystemExit(0)
     except Exception:
         logging.exception("fetch_holdings script failed.")
