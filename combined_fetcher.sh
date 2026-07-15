@@ -6,3 +6,5 @@ python3 nse_combined_fetcher.py --mode etf --ticker-file nse_etf_list.txt --work
 
 python3 nse_data_etl.py
 # python3 data_teleporter.py --mode inc
+
+python3 db/fetch_market_data.py
