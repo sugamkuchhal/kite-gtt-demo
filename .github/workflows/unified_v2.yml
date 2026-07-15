@@ -187,14 +187,6 @@ jobs:
           [ -n "$TELEGRAM_TOKEN_JSON" ] && printf '%s' "$TELEGRAM_TOKEN_JSON" > telegram_token.json
           ls -l creds.json smtp_token.json api_key.txt access_token.txt || true
 
-      - name: Refresh ref_sheets.json
-        if: ${{ steps.plan.outputs.should_run == 'true' && steps.plan.outputs.action != 'refresh' }}
-        run: |
-          set -euo pipefail
-          if [ -f .venv/bin/activate ]; then source .venv/bin/activate; fi
-          export PATH="$PWD/bin:$PATH"
-          python3 refresh_ref_sheets_json.py
-
       - name: Run unified modes (script/refresh/midday/eod/auto)
         if: ${{ steps.plan.outputs.should_run == 'true' }}
         env:
@@ -235,6 +227,7 @@ jobs:
 
             if [ "$ACTION" = "midday" ]; then
               echo "::group::RUN: Mid-day chain"
+              python3 refresh_ref_sheets_json.py
               python3 zerodha_tick_size.py
               python3 set_field_false.py
               python3 fetch_all_gtts.py
@@ -243,6 +236,7 @@ jobs:
               echo "::endgroup::"
             elif [ "$ACTION" = "eod_holiday" ]; then
               echo "::group::RUN: EOD holiday chain"
+              python3 refresh_ref_sheets_json.py
               python3 zerodha_tick_size.py
               bash combined_fetcher.sh
               python3 zerodha_tick_size.py
@@ -256,6 +250,7 @@ jobs:
               echo "::endgroup::"
             elif [ "$ACTION" = "eod" ]; then
               echo "::group::RUN: EOD chain"
+              python3 refresh_ref_sheets_json.py
               python3 zerodha_tick_size.py
               bash combined_fetcher.sh
               python3 zerodha_tick_size.py
@@ -270,10 +265,12 @@ jobs:
               echo "::endgroup::"
             elif [ "$ACTION" = "normalize" ]; then
               echo "::group::RUN: Normalize chain"
+              python3 refresh_ref_sheets_json.py
               bash combined_normalize_run.sh
               echo "::endgroup::"
             elif [ "$ACTION" = "teleport_full" ]; then
               echo "::group::RUN: Teleport Full"
+              python3 refresh_ref_sheets_json.py
               python3 data_teleporter.py --mode full
               echo "::endgroup::"
             else
@@ -281,19 +278,4 @@ jobs:
             fi
           '
 
-      - name: Commit ref_sheets.json if changed
-        if: ${{ steps.plan.outputs.should_run == 'true' && steps.plan.outputs.action != 'refresh' }}
-        run: |
-          set -euo pipefail
-          sudo chown "$(whoami)" ref_sheets.json 2>/dev/null || true
-          if git diff --quiet -- ref_sheets.json; then
-            echo "::notice::No ref_sheets.json changes to commit."
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ref_sheets.json
-          git commit -m "chore: refresh ref_sheets.json [skip ci]"
-          git pull --rebase origin main
-          git push
-          
+
