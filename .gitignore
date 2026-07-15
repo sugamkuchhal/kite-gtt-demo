@@ -12,3 +12,4 @@ api_key.txt
 creds.json
 smtp_token.json
 
+db/trading.db
