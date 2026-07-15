@@ -97,7 +97,7 @@ _AMT_PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 TELEGRAM_TOKEN_FILE = str(get_telegram_token_path())
 
 # ==========================
-# Token helpers (same pattern as algo_tickers_mailer.py)
+# Token helpers (same pattern as algo_checklist_mailer.py)
 # ==========================
 
 def load_smtp_token(path=SMTP_TOKEN_FILE):
@@ -497,7 +497,7 @@ def format_telegram_message(entries, total, unparsed_count, locked_date):
     return "\n".join(lines)
 
 # ==========================
-# Senders (same pattern as algo_tickers_mailer.py)
+# Senders (same pattern as algo_checklist_mailer.py)
 # ==========================
 
 def send_via_smtp(from_email, to_list, subject, html_body,

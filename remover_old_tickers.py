@@ -3,7 +3,7 @@
 remover_old_tickers.py
 
 Pure sheet actuator for the removals process — no email/Telegram here;
-comms are owned by algo_tickers_mailer.py, which imports run_removals().
+comms are owned by algo_checklist_mailer.py, which imports run_removals().
 
 Detection — Master_Live tab (ref sheet: TICKER)
   * Cell H2 holds a formula-driven count. When > 0, healers are triggered.

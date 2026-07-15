@@ -3,7 +3,7 @@
 remover_profitable_sip_reg.py
 
 Pure sheet actuator for the profitable SIP REG healing process — no
-email/Telegram here; comms are owned by algo_tickers_mailer.py, which
+email/Telegram here; comms are owned by algo_checklist_mailer.py, which
 imports run_sip_reg().
 
 Step 1 — OLD_SIP_REG_List tab (ref sheet: KWK)
