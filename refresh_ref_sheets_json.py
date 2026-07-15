@@ -163,7 +163,16 @@ def create_or_refresh_ref_sheets_json(
 
 
 if __name__ == "__main__":
+    import logging
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+
     data = create_or_refresh_ref_sheets_json(prefer_live=True)
     print(
         f"Ref sheets JSON written ({data['row_count']} rows, mode={data['source']['mode']}) -> {REF_JSON_PATH}"
+    )
+
+    from git_utils import commit_file_if_changed
+    commit_file_if_changed(
+        filepath="ref_sheets.json",
+        message="chore: refresh ref_sheets.json [skip ci]",
     )
