@@ -134,6 +134,30 @@ CREATE TABLE IF NOT EXISTS holdings (
     fetched_at          TEXT    NOT NULL
 );
 
+-- ── Corporate Actions ───────────────────────────────────────────────────────
+-- All corporate actions fetched from NSE API.
+-- Scanned daily: today -7 to today +30.
+-- Emailed: today -7 to today +7 only.
+-- Primary key (symbol, subject, ex_date) deduplicates across daily runs.
+
+CREATE TABLE IF NOT EXISTS corporate_actions (
+    symbol          TEXT    NOT NULL,   -- RELIANCE (no NSE: prefix)
+    company         TEXT,               -- Reliance Industries Ltd
+    subject         TEXT    NOT NULL,   -- Bonus 1:1
+    ex_date         TEXT    NOT NULL,   -- YYYY-MM-DD
+    record_date     TEXT,               -- YYYY-MM-DD or raw string
+    critical        INTEGER NOT NULL DEFAULT 0,  -- 1 if GTT-critical
+    fetched_at      TEXT    NOT NULL,   -- ISO8601 UTC
+
+    PRIMARY KEY (symbol, subject, ex_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_corporate_actions_ex_date
+    ON corporate_actions (ex_date);
+
+CREATE INDEX IF NOT EXISTS idx_corporate_actions_symbol
+    ON corporate_actions (symbol);
+
 -- ── Meta ─────────────────────────────────────────────────────────────────────
 -- Tracks last successful fetch time per table.
 
