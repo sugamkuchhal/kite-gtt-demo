@@ -206,6 +206,14 @@ def main():
     if failed:
         log.warning(f"   Failed ({len(failed)}): {', '.join(failed)}")
 
+    # Commit DB back to repo
+    from git_utils import commit_file_if_changed
+    commit_file_if_changed(
+        filepath="db/trading.db",
+        message="chore: update trading.db — daily fetch [skip ci]",
+        repo_root=_REPO_ROOT,
+    )
+
 
 if __name__ == "__main__":
     main()

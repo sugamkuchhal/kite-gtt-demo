@@ -585,6 +585,14 @@ def main():
         fatal, crit_map, warn_map, duration
     )
 
+    # Commit DB back to repo
+    from git_utils import commit_file_if_changed
+    commit_file_if_changed(
+        filepath="db/trading.db",
+        message="chore: update trading.db — backfill [skip ci]",
+        repo_root=_REPO_ROOT,
+    )
+
 
 if __name__ == "__main__":
     main()
