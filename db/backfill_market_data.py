@@ -286,6 +286,12 @@ def fetch_and_upsert_with_retry(
         if attempt > 1:
             sleep_secs = RETRY_BACKOFF[attempt - 2]
             log.warning(f"  Retry {attempt}/{MAX_RETRIES} for {symbol} in {sleep_secs}s...")
+            # Purge bad rows before retry — ensures clean slate, not overwrite of bad data
+            with get_conn() as conn:
+                deleted = conn.execute(
+                    "DELETE FROM market_data WHERE symbol = ?", (symbol,)
+                ).rowcount
+            log.info(f"  Purged {deleted} existing rows for {symbol} before retry.")
             time.sleep(sleep_secs)
 
         # Fetch
