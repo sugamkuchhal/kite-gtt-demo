@@ -44,7 +44,7 @@ SLEEP_BETWEEN   = 3.0   # seconds between batches
 STOCK_LIST      = _REPO_ROOT / "nse_stock_list.txt"
 ETF_LIST        = _REPO_ROOT / "nse_etf_list.txt"
 PORTFOLIO_SHEET = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
-DELISTED_TAB    = "Delisted"
+DELISTED_TAB    = "DELISTED"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
