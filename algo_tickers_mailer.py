@@ -559,7 +559,7 @@ def main():
 
     try:
         send_via_smtp(
-            FROM_EMAIL, recipients, subject, html_body,
+            SMTP_FROM, recipients, subject, html_body,
             SMTP_SERVER, SMTP_PORT, SMTP_USER, smtp_password
         )
         logging.info("Email sent successfully.")
