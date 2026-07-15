@@ -114,24 +114,58 @@ def fetch_today(symbol: str) -> pd.DataFrame | None:
 
 # ── DB upsert ─────────────────────────────────────────────────────────────────
 
+def _forward_fill_volume(symbol: str, df: pd.DataFrame) -> pd.DataFrame:
+    """Forward fills null/zero volume from last known good value in DB or prior rows."""
+    df = df.copy()
+    df["volume_filled"] = 0
+
+    last_good_volume = None
+    try:
+        with get_conn() as conn:
+            row = conn.execute("""
+                SELECT volume FROM market_data
+                WHERE symbol = ? AND volume > 0 AND volume_filled = 0
+                ORDER BY date DESC LIMIT 1
+            """, (symbol,)).fetchone()
+            if row:
+                last_good_volume = row["volume"]
+    except Exception:
+        pass
+
+    for i, row in df.iterrows():
+        vol = row.get("volume")
+        if vol is None or (isinstance(vol, float) and (vol != vol)) or vol == 0:
+            if last_good_volume is not None:
+                df.at[i, "volume"] = last_good_volume
+                df.at[i, "volume_filled"] = 1
+        else:
+            last_good_volume = vol
+            df.at[i, "volume_filled"] = 0
+
+    return df
+
+
 def upsert_row(symbol: str, ticker_type: str, df: pd.DataFrame) -> int:
+    df = _forward_fill_volume(symbol, df)
     now  = datetime.now(timezone.utc).isoformat()
     rows = [
         (row["date"], symbol, row["close"], row["low"],
-         row["high"], row["volume"], ticker_type, now)
+         row["high"], row.get("volume"), int(row.get("volume_filled", 0)),
+         ticker_type, now)
         for _, row in df.iterrows()
     ]
     with get_conn() as conn:
         conn.executemany("""
-            INSERT INTO market_data (date, symbol, close, low, high, volume, type, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO market_data (date, symbol, close, low, high, volume, volume_filled, type, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(date, symbol) DO UPDATE SET
-                close      = excluded.close,
-                low        = excluded.low,
-                high       = excluded.high,
-                volume     = excluded.volume,
-                type       = excluded.type,
-                updated_at = excluded.updated_at
+                close         = excluded.close,
+                low           = excluded.low,
+                high          = excluded.high,
+                volume        = excluded.volume,
+                volume_filled = excluded.volume_filled,
+                type          = excluded.type,
+                updated_at    = excluded.updated_at
         """, rows)
     return len(rows)
 
