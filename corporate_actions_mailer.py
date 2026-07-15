@@ -35,7 +35,7 @@ from html import escape as _esc
 
 import requests
 
-from runtime_paths import get_smtp_token_path, get_telegram_token_path, repo_root
+from runtime_paths import get_smtp_token_path, SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT, TELEGRAM_CHAT_ID, get_telegram_token_path, repo_root
 
 import sys as _sys
 _sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent / "db"))
@@ -86,13 +86,10 @@ GTT_CRITICAL_RE = re.compile(
 DIVIDEND_RE = re.compile(r"dividend", re.IGNORECASE)
 
 # Email / SMTP settings
-FROM_EMAIL = "sugamkuchhal@gmail.com"
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_USER = "sugamkuchhal@gmail.com"
+
 
 # Telegram settings
-TELEGRAM_CHAT_ID = "182871861"
+
 TELEGRAM_TOKEN_FILE = str(get_telegram_token_path())
 
 # ==========================

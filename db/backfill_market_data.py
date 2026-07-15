@@ -42,7 +42,8 @@ sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "db"))
 
 from db import get_conn, init_db, update_meta
-from runtime_paths import get_creds_path, get_smtp_token_path
+from runtime_paths import (get_creds_path, get_smtp_token_path,
+                           SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT)
 from ref_sheets_utils import resolve_sheet_id
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -55,12 +56,7 @@ ETF_LIST          = _REPO_ROOT / "nse_etf_list.txt"
 PORTFOLIO_SHEET   = resolve_sheet_id("PORTFOLIO")
 DELISTED_TAB      = "DELISTED"
 
-# Email
-FROM_EMAIL        = "sugamkuchhal@gmail.com"
-SMTP_USER         = "sugamkuchhal@gmail.com"
-SMTP_SERVER       = "smtp.gmail.com"
-SMTP_PORT         = 587
-TO_EMAIL          = "sugam.kuchhal.iimc@gmail.com"
+DEFAULT_TO_EMAIL  = "sugam.kuchhal.iimc@gmail.com"
 
 # Validation
 MIN_EXPECTED_ROWS = 300     # warning only — not critical
@@ -414,10 +410,11 @@ def send_email_report(
     total:        int,
     succeeded:    int,
     total_rows:   int,
-    fatal:        list[tuple[str, str]],          # [(symbol, reason)]
-    criticals:    dict[str, list[str]],            # {symbol: [issue, ...]}
-    warnings:     dict[str, list[str]],            # {symbol: [warning, ...]}
+    fatal:        list[tuple[str, str]],
+    criticals:    dict[str, list[str]],
+    warnings:     dict[str, list[str]],
     duration_secs: float,
+    to_email:     str = DEFAULT_TO_EMAIL,
 ):
     smtp_password = _load_smtp_password()
     if not smtp_password:
@@ -530,8 +527,8 @@ def send_email_report(
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
-        msg["From"]    = FROM_EMAIL
-        msg["To"]      = TO_EMAIL
+        msg["From"]    = SMTP_FROM
+        msg["To"]      = to_email
         msg.attach(MIMEText("View this email in an HTML-capable client.", "plain"))
         msg.attach(MIMEText(html, "html"))
 
@@ -540,9 +537,9 @@ def send_email_report(
             server.starttls()
             server.ehlo()
             server.login(SMTP_USER, smtp_password)
-            server.sendmail(FROM_EMAIL, [TO_EMAIL], msg.as_string())
+            server.sendmail(SMTP_FROM, [to_email], msg.as_string())
 
-        log.info(f"✅ Email report sent to {TO_EMAIL}")
+        log.info(f"✅ Email report sent to {to_email}")
     except Exception as e:
         log.error(f"Failed to send email: {e}")
 
@@ -556,6 +553,8 @@ def main():
     parser.add_argument("--mode-delisted", action="store_true", help="Fetch DELISTED tickers.")
     parser.add_argument("--dry-run",       action="store_true", help="Show tickers, no writes.")
     parser.add_argument("--batch-size",    type=int, default=DEFAULT_BATCH)
+    parser.add_argument("--emails",        type=str, default=DEFAULT_TO_EMAIL,
+                        help="Comma-separated recipient emails for report.")
     args = parser.parse_args()
 
     run_all      = not (args.mode_stock or args.mode_etf or args.mode_delisted)
@@ -628,7 +627,8 @@ def main():
 
     send_email_report(
         modes_run, total, succeeded, total_rows,
-        fatal, crit_map, warn_map, duration
+        fatal, crit_map, warn_map, duration,
+        to_email=args.emails.split(",")[0].strip(),
     )
 
     # Commit DB back to repo

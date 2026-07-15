@@ -14,7 +14,7 @@ import os
 import urllib.request
 import urllib.parse
 
-from runtime_paths import get_creds_path, get_smtp_token_path, get_telegram_token_path
+from runtime_paths import get_creds_path, get_smtp_token_path, get_telegram_token_path, SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT, TELEGRAM_CHAT_ID
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -38,13 +38,10 @@ COL_JTBD = 17     # R
 COL_UNITS = 18    # S
 
 # Email / SMTP settings
-FROM_EMAIL = "sugamkuchhal@gmail.com"
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_USER = "sugamkuchhal@gmail.com"
+
 
 # Telegram settings
-TELEGRAM_CHAT_ID = "182871861"
+
 TELEGRAM_TOKEN_FILE = str(get_telegram_token_path())
 
 # Sheet link is built from the resolved sheet id at runtime (see main())

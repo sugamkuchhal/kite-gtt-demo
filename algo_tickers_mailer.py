@@ -17,7 +17,7 @@ import urllib.request
 import urllib.parse
 from html import escape as _esc
 
-from runtime_paths import get_creds_path, get_smtp_token_path, get_telegram_token_path, repo_root
+from runtime_paths import get_creds_path, get_smtp_token_path, get_telegram_token_path, repo_root, SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT, TELEGRAM_CHAT_ID
 from ref_sheets_utils import resolve_sheet_id
 from remover_old_tickers import run_removals
 from remover_profitable_sip_reg import run_sip_reg
@@ -53,13 +53,10 @@ HEALER_LOG_TAIL = 10                 # log lines per healer shown in comms
 
 
 # Email / SMTP settings
-FROM_EMAIL = "sugamkuchhal@gmail.com"
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_USER = "sugamkuchhal@gmail.com"
+
 
 # Telegram settings
-TELEGRAM_CHAT_ID = "182871861"
+
 TELEGRAM_TOKEN_FILE = str(get_telegram_token_path())
 
 # ==========================
