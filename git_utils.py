@@ -28,7 +28,7 @@ def _get_authenticated_remote(repo_root_path: Path) -> str | None:
     Returns an authenticated remote URL using GH_PAT or GITHUB_TOKEN env vars.
     Returns None if no token is available (local dev — uses existing remote).
     """
-    token = os.environ.get("GH_PAT") or os.environ.get("GITHUB_TOKEN")
+    token = os.environ.get("GH_PAT") or os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if not token:
         return None
 
