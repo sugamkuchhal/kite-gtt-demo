@@ -90,15 +90,16 @@ def _load_delisted(creds_path: Path) -> list[tuple[str, str]]:
     return tickers
 
 
-def load_all_tickers(skip_delisted: bool = False) -> list[tuple[str, str]]:
+def load_all_tickers(skip_delisted: bool = False, only_delisted: bool = False) -> list[tuple[str, str]]:
     """Merges all sources, deduplicates. Returns list of (symbol, type)."""
     tickers: dict[str, str] = {}
 
-    for symbol, t in _load_txt(STOCK_LIST, "STOCK"):
-        tickers[symbol] = t
+    if not only_delisted:
+        for symbol, t in _load_txt(STOCK_LIST, "STOCK"):
+            tickers[symbol] = t
 
-    for symbol, t in _load_txt(ETF_LIST, "ETF"):
-        tickers[symbol] = t
+        for symbol, t in _load_txt(ETF_LIST, "ETF"):
+            tickers[symbol] = t
 
     if not skip_delisted:
         try:
@@ -194,13 +195,18 @@ def upsert_to_db(symbol: str, ticker_type: str, df: pd.DataFrame) -> int:
 
 def main():
     parser = argparse.ArgumentParser(description="Backfill market_data from yfinance.")
-    parser.add_argument("--dry-run",       action="store_true", help="Show tickers, skip DB writes.")
-    parser.add_argument("--batch-size",    type=int, default=DEFAULT_BATCH)
-    parser.add_argument("--skip-delisted", action="store_true", help="Skip Delisted tab fetch.")
+    parser.add_argument("--dry-run",        action="store_true", help="Show tickers, skip DB writes.")
+    parser.add_argument("--batch-size",     type=int, default=DEFAULT_BATCH)
+    parser.add_argument("--skip-delisted",  action="store_true", help="Skip DELISTED tab fetch.")
+    parser.add_argument("--only-delisted",  action="store_true", help="Fetch only DELISTED tickers, skip txt files.")
     args = parser.parse_args()
 
+    if args.only_delisted and args.skip_delisted:
+        log.error("Cannot use --only-delisted and --skip-delisted together.")
+        sys.exit(1)
+
     init_db()
-    tickers = load_all_tickers(skip_delisted=args.skip_delisted)
+    tickers = load_all_tickers(skip_delisted=args.skip_delisted, only_delisted=args.only_delisted)
 
     if args.dry_run:
         log.info("DRY RUN — tickers that would be fetched:")
