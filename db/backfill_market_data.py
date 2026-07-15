@@ -37,7 +37,7 @@ from db import get_conn, init_db, update_meta
 from runtime_paths import get_creds_path
 
 # ── Config ────────────────────────────────────────────────────────────────────
-START_DATE      = "2020-01-01"
+START_DATE      = "2024-01-01"
 DEFAULT_BATCH   = 10
 SLEEP_BETWEEN   = 3.0   # seconds between batches
 
