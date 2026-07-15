@@ -40,7 +40,8 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 from runtime_paths import (get_creds_path, get_smtp_token_path,
-                           get_telegram_token_path, repo_root)
+                           get_telegram_token_path, repo_root,
+                           SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT, TELEGRAM_CHAT_ID)
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -89,13 +90,10 @@ _AMT_RS_RE = re.compile(r"R(?:s|e)\.?\s*(\d+(?:\.\d+)?)", re.IGNORECASE)
 _AMT_PCT_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
 
 # Email / SMTP settings
-FROM_EMAIL = "sugamkuchhal@gmail.com"
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_USER = "sugamkuchhal@gmail.com"
+
 
 # Telegram settings
-TELEGRAM_CHAT_ID = "182871861"
+
 TELEGRAM_TOKEN_FILE = str(get_telegram_token_path())
 
 # ==========================

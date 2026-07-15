@@ -6,9 +6,6 @@ from typing import Iterable, Optional
 
 # This script has no Google Sheets dependency by design.
 
-_DEFAULT_LEGACY_ROOT = Path("/Users/sugamkuchhal/Documents/kite-gtt-demo")
-
-
 def repo_root() -> Path:
     return Path(__file__).resolve().parent
 
@@ -43,16 +40,7 @@ def resolve_path(filename: str, env_vars: Iterable[str] = ()) -> Path:
     if secrets_dir:
         return _expand(secrets_dir) / filename
 
-    candidate = repo_root() / filename
-    if candidate.exists():
-        return candidate
-
-    legacy_root = _expand(os.getenv("KITE_LEGACY_ROOT", str(_DEFAULT_LEGACY_ROOT)))
-    legacy_candidate = legacy_root / filename
-    if legacy_candidate.exists():
-        return legacy_candidate
-
-    return candidate
+    return repo_root() / filename
 
 
 def get_creds_path() -> Path:
@@ -76,3 +64,15 @@ def get_smtp_token_path() -> Path:
 
 def get_telegram_token_path() -> Path:
     return resolve_path("telegram_token.json", env_vars=("TELEGRAM_TOKEN_PATH",))
+
+
+# ── Notification config ───────────────────────────────────────────────────────
+# Central place for SMTP and Telegram constants.
+# Import from here instead of redefining in each script.
+
+SMTP_FROM        = "sugamkuchhal@gmail.com"
+SMTP_USER        = "sugamkuchhal@gmail.com"
+SMTP_SERVER      = "smtp.gmail.com"
+SMTP_PORT        = 587
+
+TELEGRAM_CHAT_ID = "182871861"
