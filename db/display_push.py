@@ -1,8 +1,6 @@
 """
 display_push.py — Push SQLite DB tables to Google Sheets DB_VIEW for human viewing.
 
-Sheet: https://docs.google.com/spreadsheets/d/1HBBT7kvhZ84-vaHE7DNehfkFaua4zeznHYxbg5m1p58
-
 Tabs pushed:
   - HOLDINGS      — all current holdings
   - GTTS          — all active GTTs
@@ -30,8 +28,9 @@ sys.path.insert(0, str(_REPO_ROOT / "db"))
 
 from db import get_conn, init_db
 from runtime_paths import get_creds_path
+from ref_sheets_utils import resolve_sheet_id
 
-DB_VIEW_SHEET_ID = "1HBBT7kvhZ84-vaHE7DNehfkFaua4zeznHYxbg5m1p58"
+DB_VIEW_SHEET_ID = resolve_sheet_id("DB_VIEW")
 TABS             = ["HOLDINGS", "GTTS", "ORDERS", "MARKET_DATA", "CORP_ACTIONS"]
 EMAIL_WINDOW     = 7
 SCOPES           = [

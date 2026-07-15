@@ -43,6 +43,7 @@ sys.path.insert(0, str(_REPO_ROOT / "db"))
 
 from db import get_conn, init_db, update_meta
 from runtime_paths import get_creds_path, get_smtp_token_path
+from ref_sheets_utils import resolve_sheet_id
 
 # ── Config ────────────────────────────────────────────────────────────────────
 START_DATE        = "2024-01-01"
@@ -51,7 +52,7 @@ SLEEP_BETWEEN     = 3.0
 
 STOCK_LIST        = _REPO_ROOT / "nse_stock_list.txt"
 ETF_LIST          = _REPO_ROOT / "nse_etf_list.txt"
-PORTFOLIO_SHEET   = "14G8Yinl28F9ZROedyhiH4p5jCz2bcfA2goVB21PVE1s"
+PORTFOLIO_SHEET   = resolve_sheet_id("PORTFOLIO")
 DELISTED_TAB      = "DELISTED"
 
 # Email

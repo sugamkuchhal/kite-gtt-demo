@@ -14,8 +14,8 @@
     ],
     "header_row_index": 1
   },
-  "updated_at_utc": "2026-07-15T09:31:51.325423+00:00",
-  "row_count": 17,
+  "updated_at_utc": "2026-07-15T09:35:06.926013+00:00",
+  "row_count": 18,
   "rows": [
     {
       "ref-sheets": "CONSOLIDATED",
@@ -118,6 +118,12 @@
       "type": "BASE",
       "sheet-id": "145TqrpQ3Twx6Tezh28s5GnbowlBb_qcY5UM1RvfIclI",
       "sheet-name": "VS Portfolio"
+    },
+    {
+      "ref-sheets": "DB_VIEW",
+      "type": "BASE",
+      "sheet-id": "1HBBT7kvhZ84-vaHE7DNehfkFaua4zeznHYxbg5m1p58",
+      "sheet-name": "DB_VIEW \u2014 algo_trading"
     }
   ]
 }
