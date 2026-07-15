@@ -1,8 +1,15 @@
 import logging
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
 from kite_session import get_kite
 from google_sheets_utils import get_gsheet_client
-from datetime import datetime
 from ref_sheets_utils import resolve_sheet_id
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "db"))
+from db import get_conn, init_db, update_meta
+from git_utils import commit_file_if_changed
+from runtime_paths import repo_root
 
 
 import atexit
@@ -76,6 +83,45 @@ def fetch_all_orders():
     except Exception as e:
         logging.error(f"❌ Failed to fetch/write orders: {e}")
 
+def write_orders_to_db(orders):
+    """Writes today's orders snapshot to DB — DELETE + INSERT on every fetch."""
+    if not orders:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    rows = []
+    for o in orders:
+        ts = o.get("order_timestamp")
+        if isinstance(ts, datetime):
+            ts = ts.isoformat()
+        rows.append((
+            o.get("order_id"),
+            o.get("exchange_order_id"),
+            o.get("instrument_token"),
+            o.get("tradingsymbol"),
+            o.get("transaction_type"),
+            o.get("order_type"),
+            o.get("product"),
+            o.get("quantity"),
+            o.get("filled_quantity"),
+            o.get("price"),
+            o.get("average_price"),
+            o.get("status"),
+            str(ts) if ts else None,
+            now,
+        ))
+    with get_conn() as conn:
+        conn.execute("DELETE FROM orders")
+        conn.executemany("""
+            INSERT INTO orders (
+                order_id, exchange_order_id, instrument_token, tradingsymbol,
+                transaction_type, order_type, product, quantity, filled_qty,
+                price, average_price, status, order_timestamp, fetched_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, rows)
+        update_meta(conn, "orders", len(rows))
+    logging.info("✅ %d orders written to DB.", len(rows))
+
+
 def run_cli():
     try:
         fetch_all_orders()
@@ -85,4 +131,13 @@ def run_cli():
         return 1
 
 if __name__ == "__main__":
+    init_db()
+    kite = get_kite()
+    orders = kite.orders()
+    write_orders_to_db(orders or [])
+    commit_file_if_changed(
+        filepath="db/trading.db",
+        message="chore: update trading.db — orders [skip ci]",
+        repo_root=repo_root(),
+    )
     raise SystemExit(run_cli())
