@@ -71,6 +71,12 @@ def main():
 
     FULL_PATH.write_text(content, encoding="utf-8")
     print(f"Wrote {FULL_PATH}")
+
+    from git_utils import commit_file_if_changed
+    commit_file_if_changed(
+        filepath="requirements/full.txt",
+        message="chore: update requirements/full.txt [skip ci]",
+    )
     return 0
 
 
