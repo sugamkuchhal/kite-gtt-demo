@@ -11,4 +11,5 @@ access_token.txt
 api_key.txt
 creds.json
 smtp_token.json
+telegram_token.json
 
