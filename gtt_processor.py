@@ -695,7 +695,7 @@ def _send_market_order_email(orders, recipient=DEFAULT_RECIPIENT_EMAIL):
         return False
 
 
-def process_market_sheet(kite, worksheet, status_manager, logger):
+def process_market_sheet(kite, worksheet, status_manager, logger, recipient=DEFAULT_RECIPIENT_EMAIL):
     rows = worksheet.get_all_values()
     if not rows or len(rows) < 2:
         logger.info("No rows to process in MKT_INS")
@@ -750,7 +750,7 @@ def process_market_sheet(kite, worksheet, status_manager, logger):
         return
 
     logger.info(f"Found {len(pending_orders)} pending market order(s) — sending email alert.")
-    email_ok = _send_market_order_email(pending_orders)
+    email_ok = _send_market_order_email(pending_orders, recipient=recipient)
     status_msg = "📧 email sent" if email_ok else "❌ email failed"
     for o in pending_orders:
         update_status(status_manager, o["row_num"], status_msg)
@@ -898,6 +898,7 @@ if __name__ == "__main__":
         parser.add_argument("--ref-sheets", dest="ref_sheets", help="Resolver key for instruction sheet (example: PORTFOLIO)", type=str, required=True)
         parser.add_argument("--sheet-name", dest="sheet_name", help="Instruction worksheet name", type=str, required=True)
         parser.add_argument("--market-order", action="store_true", help="Process Market Orders instead of GTT")
+        parser.add_argument("--emails", dest="emails", default=DEFAULT_RECIPIENT_EMAIL, help="Comma-separated recipient emails for market order alert")
 
         args = parser.parse_args()
 
@@ -924,7 +925,7 @@ if __name__ == "__main__":
 
             # Process MKT_INS sheet directly
             status_manager = SheetStatusManager(instruction_sheet)
-            process_market_sheet(kite, instruction_sheet, status_manager, logger)
+            process_market_sheet(kite, instruction_sheet, status_manager, logger, recipient=args.emails)
             status_manager.flush_status_updates()
         else:
             # Default: GTT flow
