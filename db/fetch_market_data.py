@@ -71,9 +71,9 @@ def _to_yf_symbol(symbol: str) -> str:
 
 def fetch_today(symbol: str) -> pd.DataFrame | None:
     """
-    Fetches last 5 days from yfinance and returns only today's row.
-    Using 5d window avoids issues where today's data isn't available yet
-    — falls back to last available trading day.
+    Fetches last 5 days from yfinance and upserts all returned rows.
+    Using 5d window ensures missed days (holidays, failures) are backfilled
+    automatically on the next successful run.
     """
     yf_sym = _to_yf_symbol(symbol)
     try:
@@ -105,8 +105,7 @@ def fetch_today(symbol: str) -> pd.DataFrame | None:
         df["volume"] = (df["volume"] * df["close"]) / 1e7
         df = df[["date", "close", "low", "high", "volume"]].dropna(subset=["close"])
 
-        # Return only the latest available row
-        return df.tail(1)
+        return df
 
     except Exception as e:
         log.error(f"  Failed to fetch {symbol}: {e}")
