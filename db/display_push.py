@@ -44,44 +44,42 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(mes
 log = logging.getLogger(__name__)
 
 
-# ── Tab column metadata ───────────────────────────────────────────────────────
-# For each tab: which 0-based column indices are REAL (2dp) and which are DATE
+# ── Tab column metadata — by column name ──────────────────────────────────────
+# real_cols  → float, display as #,##0.00
+# int_cols   → integer, display as number
+# date_cols  → date only, display as DD-MMM-YYYY
+# ts_cols    → timestamp with time, display as DD-MMM-YYYY HH:MM:SS
 
 TAB_META = {
     "HOLDINGS": {
-        # tradingsymbol, isin, quantity, used_quantity, t1_quantity,
-        # average_price, last_price, pnl, product, exchange, fetched_at
-        "real_cols":  [5, 6, 7],       # average_price, last_price, pnl
-        "int_cols":   [2, 3, 4],       # quantity, used_quantity, t1_quantity
-        "date_cols":  [10],            # fetched_at
+        "real_cols": ["average_price", "last_price", "pnl"],
+        "int_cols":  ["quantity", "used_quantity", "t1_quantity"],
+        "date_cols": [],
+        "ts_cols":   ["fetched_at"],
     },
     "GTTS": {
-        # gtt_id, symbol, exchange, trigger_type, trigger_value,
-        # last_price, order_price, order_qty, order_type, product,
-        # transaction_type, status, fetched_at
-        "real_cols":  [4, 5, 6],       # trigger_value, last_price, order_price
-        "int_cols":   [0, 7],          # gtt_id, order_qty
-        "date_cols":  [12],            # fetched_at
+        "real_cols": ["trigger_value", "last_price", "order_price"],
+        "int_cols":  ["gtt_id", "order_qty"],
+        "date_cols": [],
+        "ts_cols":   ["fetched_at"],
     },
     "ORDERS": {
-        # order_id, exchange_order_id, instrument_token, tradingsymbol,
-        # transaction_type, order_type, product, quantity, filled_qty,
-        # price, average_price, status, order_timestamp, fetched_at
-        "real_cols":  [9, 10],         # price, average_price
-        "int_cols":   [2, 7, 8],       # instrument_token, quantity, filled_qty
-        "date_cols":  [12, 13],        # order_timestamp, fetched_at
+        "real_cols": ["price", "average_price"],
+        "int_cols":  ["instrument_token", "quantity", "filled_qty"],
+        "date_cols": [],
+        "ts_cols":   ["order_timestamp", "fetched_at"],
     },
     "MARKET_DATA": {
-        # symbol, type, date, close, low, high, volume, volume_filled, updated_at
-        "real_cols":  [3, 4, 5, 6],    # close, low, high, volume
-        "int_cols":   [7],             # volume_filled
-        "date_cols":  [2, 8],          # date, updated_at
+        "real_cols": ["close", "low", "high", "volume"],
+        "int_cols":  ["volume_filled"],
+        "date_cols": ["date"],
+        "ts_cols":   ["updated_at"],
     },
     "CORP_ACTIONS": {
-        # symbol, company, subject, ex_date, record_date, critical, fetched_at
-        "real_cols":  [],
-        "int_cols":   [5],             # critical
-        "date_cols":  [3, 4, 6],       # ex_date, record_date, fetched_at
+        "real_cols": [],
+        "int_cols":  ["critical"],
+        "date_cols": ["ex_date", "record_date"],
+        "ts_cols":   ["fetched_at"],
     },
 }
 
@@ -96,24 +94,19 @@ def get_service():
 # ── Tab management ────────────────────────────────────────────────────────────
 
 def get_sheet_id_map(service) -> dict[str, int]:
-    """Returns {tab_title: sheetId} for all tabs."""
     meta = service.spreadsheets().get(spreadsheetId=DB_VIEW_SHEET_ID).execute()
     return {s["properties"]["title"]: s["properties"]["sheetId"]
             for s in meta["sheets"]}
 
 
 def ensure_tabs(service):
-    """Creates tabs that don't exist yet. Removes default Sheet1 if present."""
-    existing = get_sheet_id_map(service)
-    requests = []
-
+    existing  = get_sheet_id_map(service)
+    requests  = []
     for name in TABS:
         if name not in existing:
             requests.append({"addSheet": {"properties": {"title": name}}})
-
     if "Sheet1" in existing:
         requests.append({"deleteSheet": {"sheetId": existing["Sheet1"]}})
-
     if requests:
         service.spreadsheets().batchUpdate(
             spreadsheetId=DB_VIEW_SHEET_ID,
@@ -124,28 +117,54 @@ def ensure_tabs(service):
 
 # ── Value cleaning ────────────────────────────────────────────────────────────
 
-_DATE_FORMATS = ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f",
-                 "%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%S.%f%z"]
-
-def _parse_date(v: str) -> str | None:
-    """Try to parse a date string. Returns DD-MMM-YYYY string or None."""
-    for fmt in _DATE_FORMATS:
+def _parse_dt(v: str) -> datetime | None:
+    """Try to parse a string as datetime. Returns datetime or None."""
+    if not v:
+        return None
+    for fmt in [
+        "%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S.%f",   "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",      "%Y-%m-%d",
+        "%d-%b-%Y",
+    ]:
         try:
-            dt = datetime.strptime(v[:26], fmt[:len(v)])
-            return dt.strftime("%d-%b-%Y")
-        except (ValueError, TypeError):
+            return datetime.strptime(v[:26], fmt[:len(v[:26])])
+        except ValueError:
             continue
-    # Try built-in fromisoformat
     try:
-        dt = datetime.fromisoformat(v.replace("Z", "+00:00"))
-        return dt.strftime("%d-%b-%Y")
+        return datetime.fromisoformat(v.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
-        pass
-    return None
+        return None
 
 
-def _clean(v) -> str | int | float:
-    """Clean a single value for Sheets."""
+def _clean_date(v) -> str:
+    """Format as DD-MMM-YYYY."""
+    if v is None:
+        return ""
+    if isinstance(v, (datetime, date)):
+        return v.strftime("%d-%b-%Y")
+    if isinstance(v, str):
+        dt = _parse_dt(v)
+        if dt:
+            return dt.strftime("%d-%b-%Y")
+    return str(v) if v else ""
+
+
+def _clean_ts(v) -> str:
+    """Format as DD-MMM-YYYY HH:MM:SS."""
+    if v is None:
+        return ""
+    if isinstance(v, datetime):
+        return v.strftime("%d-%b-%Y %H:%M:%S")
+    if isinstance(v, str):
+        dt = _parse_dt(v)
+        if dt:
+            return dt.strftime("%d-%b-%Y %H:%M:%S")
+    return str(v) if v else ""
+
+
+def _clean_value(v) -> str | int | float:
+    """Generic clean — preserves int/float, passes strings through."""
     if v is None:
         return ""
     if isinstance(v, bool):
@@ -154,13 +173,6 @@ def _clean(v) -> str | int | float:
         return v
     if isinstance(v, float):
         return round(v, 2)
-    if isinstance(v, (datetime, date)):
-        return v.strftime("%d-%b-%Y")
-    if isinstance(v, str):
-        parsed = _parse_date(v)
-        if parsed:
-            return parsed
-        return v
     return str(v)
 
 
@@ -223,26 +235,39 @@ def load_corporate_actions() -> tuple[list, list]:
 
 # ── Sheet writer ──────────────────────────────────────────────────────────────
 
-def _col_letter(idx: int) -> str:
-    """0-based column index to letter (0=A, 25=Z, 26=AA)."""
-    result = ""
-    idx += 1
-    while idx:
-        idx, r = divmod(idx - 1, 26)
-        result = chr(65 + r) + result
-    return result
-
-
 def write_tab(service, tab: str, headers: list, rows: list):
     """Clears tab, writes headers + cleaned rows, then formats columns."""
     sheet_id_map = get_sheet_id_map(service)
     sheet_id     = sheet_id_map.get(tab)
     meta         = TAB_META.get(tab, {})
-    real_cols    = meta.get("real_cols", [])
-    date_cols    = meta.get("date_cols", [])
 
-    # Clean all values
-    cleaned = [headers] + [[_clean(v) for v in r] for r in rows]
+    real_cols  = meta.get("real_cols", [])
+    int_cols   = meta.get("int_cols",  [])
+    date_cols  = meta.get("date_cols", [])
+    ts_cols    = meta.get("ts_cols",   [])
+
+    # Resolve column names to 0-based indices
+    def _idx(col_names: list[str]) -> list[int]:
+        return [headers.index(c) for c in col_names if c in headers]
+
+    real_idx  = _idx(real_cols)
+    int_idx   = _idx(int_cols)
+    date_idx  = _idx(date_cols)
+    ts_idx    = _idx(ts_cols)
+
+    # Clean each row — apply correct formatter per column
+    def _clean_row(row: list) -> list:
+        result = []
+        for i, v in enumerate(row):
+            if i in date_idx:
+                result.append(_clean_date(v))
+            elif i in ts_idx:
+                result.append(_clean_ts(v))
+            else:
+                result.append(_clean_value(v))
+        return result
+
+    cleaned = [headers] + [_clean_row(r) for r in rows]
 
     # Write data
     service.spreadsheets().values().clear(
@@ -260,65 +285,58 @@ def write_tab(service, tab: str, headers: list, rows: list):
         log.info(f"✅ {tab}: {len(rows)} rows written.")
         return
 
-    # Format columns
-    num_rows = len(rows) + 1  # include header
-    format_requests = []
+    num_rows     = len(rows) + 1
+    fmt_requests = []
 
-    for col_idx in real_cols:
-        format_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": sheet_id,
-                    "startRowIndex": 1,
-                    "endRowIndex": num_rows,
-                    "startColumnIndex": col_idx,
-                    "endColumnIndex": col_idx + 1,
-                },
-                "cell": {"userEnteredFormat": {
-                    "numberFormat": {"type": "NUMBER", "pattern": "#,##0.00"}
-                }},
-                "fields": "userEnteredFormat.numberFormat",
-            }
-        })
-
-    for col_idx in date_cols:
-        format_requests.append({
-            "repeatCell": {
-                "range": {
-                    "sheetId": sheet_id,
-                    "startRowIndex": 1,
-                    "endRowIndex": num_rows,
-                    "startColumnIndex": col_idx,
-                    "endColumnIndex": col_idx + 1,
-                },
-                "cell": {"userEnteredFormat": {
-                    "numberFormat": {"type": "DATE", "pattern": "dd-mmm-yyyy"}
-                }},
-                "fields": "userEnteredFormat.numberFormat",
-            }
-        })
-
-    # Bold header row
-    format_requests.append({
-        "repeatCell": {
-            "range": {
-                "sheetId": sheet_id,
-                "startRowIndex": 0,
-                "endRowIndex": 1,
-            },
+    # Float columns → #,##0.00
+    for col_idx in real_idx:
+        fmt_requests.append({"repeatCell": {
+            "range": {"sheetId": sheet_id, "startRowIndex": 1,
+                      "endRowIndex": num_rows,
+                      "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
             "cell": {"userEnteredFormat": {
-                "textFormat": {"bold": True},
-                "backgroundColor": {"red": 0.26, "green": 0.26, "blue": 0.44},
-                "horizontalAlignment": "CENTER",
-            }},
-            "fields": "userEnteredFormat(textFormat,backgroundColor,horizontalAlignment)",
-        }
-    })
+                "numberFormat": {"type": "NUMBER", "pattern": "#,##0.00"}}},
+            "fields": "userEnteredFormat.numberFormat",
+        }})
 
-    if format_requests:
+    # Date columns → DD-MMM-YYYY
+    for col_idx in date_idx:
+        fmt_requests.append({"repeatCell": {
+            "range": {"sheetId": sheet_id, "startRowIndex": 1,
+                      "endRowIndex": num_rows,
+                      "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
+            "cell": {"userEnteredFormat": {
+                "numberFormat": {"type": "DATE", "pattern": "dd-mmm-yyyy"}}},
+            "fields": "userEnteredFormat.numberFormat",
+        }})
+
+    # Timestamp columns → DD-MMM-YYYY HH:MM:SS
+    for col_idx in ts_idx:
+        fmt_requests.append({"repeatCell": {
+            "range": {"sheetId": sheet_id, "startRowIndex": 1,
+                      "endRowIndex": num_rows,
+                      "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
+            "cell": {"userEnteredFormat": {
+                "numberFormat": {"type": "DATE_TIME",
+                                 "pattern": "dd-mmm-yyyy hh:mm:ss"}}},
+            "fields": "userEnteredFormat.numberFormat",
+        }})
+
+    # Bold header row with dark background
+    fmt_requests.append({"repeatCell": {
+        "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1},
+        "cell": {"userEnteredFormat": {
+            "textFormat": {"bold": True},
+            "backgroundColor": {"red": 0.26, "green": 0.26, "blue": 0.44},
+            "horizontalAlignment": "CENTER",
+        }},
+        "fields": "userEnteredFormat(textFormat,backgroundColor,horizontalAlignment)",
+    }})
+
+    if fmt_requests:
         service.spreadsheets().batchUpdate(
             spreadsheetId=DB_VIEW_SHEET_ID,
-            body={"requests": format_requests},
+            body={"requests": fmt_requests},
         ).execute()
 
     log.info(f"✅ {tab}: {len(rows)} rows written and formatted.")
@@ -346,7 +364,7 @@ def main():
             print(f"\n── {tab} ({len(rows)} rows)")
             print("  " + " | ".join(headers))
             for r in rows[:3]:
-                print("  " + " | ".join(str(_clean(v)) for v in r))
+                print("  " + " | ".join(str(v) for v in r))
             if len(rows) > 3:
                 print(f"  ... {len(rows) - 3} more rows")
         return
