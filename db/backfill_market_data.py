@@ -43,7 +43,8 @@ sys.path.insert(0, str(_REPO_ROOT / "db"))
 
 from db import get_conn, init_db, update_meta
 from runtime_paths import (get_creds_path, get_smtp_token_path,
-                           SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT)
+                           SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT,
+                           DEFAULT_RECIPIENT_EMAIL)
 from ref_sheets_utils import resolve_sheet_id
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -56,7 +57,7 @@ ETF_LIST          = _REPO_ROOT / "nse_etf_list.txt"
 PORTFOLIO_SHEET   = resolve_sheet_id("PORTFOLIO")
 DELISTED_TAB      = "DELISTED"
 
-DEFAULT_TO_EMAIL  = "sugam.kuchhal.iimc@gmail.com"
+DEFAULT_TO_EMAIL  = DEFAULT_RECIPIENT_EMAIL
 
 # Validation
 MIN_EXPECTED_ROWS = 300     # warning only — not critical
