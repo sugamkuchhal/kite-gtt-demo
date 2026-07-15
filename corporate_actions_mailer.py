@@ -37,6 +37,11 @@ import requests
 
 from runtime_paths import get_smtp_token_path, get_telegram_token_path, repo_root
 
+import sys as _sys
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent / "db"))
+from db import get_conn, init_db, update_meta
+from git_utils import commit_file_if_changed
+
 import atexit
 from script_logger import log_start, log_end
 
@@ -49,8 +54,9 @@ SMTP_TOKEN_FILE = str(get_smtp_token_path())
 # Config (constants)
 # ==========================
 TICKER_FILE = "nse_stock_list.txt"     # repo file, one symbol per line
-UPCOMING_DAYS = 30                     # look-ahead window for announced actions
-RECENT_DAYS = 7                        # look-back window for completed actions
+UPCOMING_DAYS = 30                     # look-ahead window for announced actions (stored in DB)
+RECENT_DAYS = 7                        # look-back window for completed actions (stored in DB)
+EMAIL_WINDOW_DAYS = 7                  # email only actions within ±7 days of today
 
 NSE_BASE = "https://www.nseindia.com"
 NSE_CA_API = NSE_BASE + "/api/corporates-corporateActions"
@@ -220,6 +226,83 @@ def fetch_nse_corporate_actions(from_date, to_date):
                 time.sleep(sleep_secs)
     raise RuntimeError(f"NSE corporate actions fetch failed after "
                        f"{FETCH_RETRIES} attempts: {last_err}")
+
+# ==========================
+# DB helpers
+# ==========================
+
+def upsert_to_db(upcoming, recent, unparsed):
+    """Upserts all fetched actions into corporate_actions table."""
+    now = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()
+    all_entries = upcoming + recent + unparsed
+    rows = []
+    for e in all_entries:
+        ex_date_str = e["ex_date"].strftime("%Y-%m-%d") if e["ex_date"] else None
+        if not ex_date_str:
+            continue
+        rows.append((
+            e["symbol"],
+            e["company"],
+            e["subject"],
+            ex_date_str,
+            e["record_date"],
+            1 if e["critical"] else 0,
+            now,
+        ))
+    if not rows:
+        return
+    with get_conn() as conn:
+        conn.executemany("""
+            INSERT INTO corporate_actions
+                (symbol, company, subject, ex_date, record_date, critical, fetched_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(symbol, subject, ex_date) DO UPDATE SET
+                company    = excluded.company,
+                record_date= excluded.record_date,
+                critical   = excluded.critical,
+                fetched_at = excluded.fetched_at
+        """, rows)
+    logging.info("Upserted %d corporate actions into DB.", len(rows))
+
+
+def load_email_window(today):
+    """
+    Reads from DB and returns (upcoming_email, recent_email) filtered to
+    ±EMAIL_WINDOW_DAYS from today. upcoming = ex_date >= today, recent = ex_date < today.
+    """
+    window_from = (today - __import__("datetime").timedelta(days=EMAIL_WINDOW_DAYS)).strftime("%Y-%m-%d")
+    window_to   = (today + __import__("datetime").timedelta(days=EMAIL_WINDOW_DAYS)).strftime("%Y-%m-%d")
+    today_str   = today.strftime("%Y-%m-%d")
+
+    with get_conn() as conn:
+        rows = conn.execute("""
+            SELECT symbol, company, subject, ex_date, record_date, critical
+            FROM corporate_actions
+            WHERE ex_date BETWEEN ? AND ?
+            ORDER BY ex_date ASC, symbol ASC
+        """, (window_from, window_to)).fetchall()
+
+    upcoming_email, recent_email = [], []
+    for r in rows:
+        entry = {
+            "symbol":      r["symbol"],
+            "company":     r["company"] or "",
+            "subject":     r["subject"],
+            "ex_date":     __import__("datetime").datetime.strptime(r["ex_date"], "%Y-%m-%d").date(),
+            "ex_date_raw": r["ex_date"],
+            "record_date": r["record_date"] or "",
+            "critical":    bool(r["critical"]),
+        }
+        if entry["ex_date"] >= today:
+            upcoming_email.append(entry)
+        else:
+            recent_email.append(entry)
+
+    recent_email.sort(key=lambda e: e["ex_date"], reverse=True)
+    logging.info("Email window ±%d days: upcoming=%d, recent=%d",
+                 EMAIL_WINDOW_DAYS, len(upcoming_email), len(recent_email))
+    return upcoming_email, recent_email
+
 
 # ==========================
 # Classification
@@ -463,19 +546,33 @@ def main():
     raw_rows = fetch_nse_corporate_actions(window_from, window_to)
     upcoming, recent, unparsed = classify_actions(raw_rows, my_symbols, today)
 
-    if not upcoming and not recent and not unparsed:
-        logging.info("No corporate actions for portfolio tickers in window — "
-                     "skipping email and Telegram.")
+    # Persist everything fetched to DB (full scan window)
+    init_db()
+    upsert_to_db(upcoming, recent, unparsed)
+
+    # Load only ±EMAIL_WINDOW_DAYS for email
+    upcoming_email, recent_email = load_email_window(today)
+
+    if not upcoming_email and not recent_email:
+        logging.info("No corporate actions in ±%d day email window — "
+                     "skipping email and Telegram.", EMAIL_WINDOW_DAYS)
+        commit_file_if_changed(
+            filepath="db/trading.db",
+            message="chore: update trading.db — corporate actions [skip ci]",
+            repo_root=repo_root(),
+        )
         return
 
     subject_date = datetime.today().strftime("%d-%b-%Y")
-    n_critical = sum(1 for e in upcoming if e["critical"])
+    n_critical = sum(1 for e in upcoming_email if e["critical"])
     subject = f"CORPORATE ACTIONS {subject_date}"
     if n_critical:
         subject += f" — {n_critical} GTT-CRITICAL"
 
-    html_body = format_email(upcoming, recent, unparsed, subject_date, window_from, window_to)
-    tg_text = format_telegram_message(upcoming, recent, subject_date)
+    html_body = format_email(upcoming_email, recent_email, unparsed, subject_date,
+                             today - timedelta(days=EMAIL_WINDOW_DAYS),
+                             today + timedelta(days=EMAIL_WINDOW_DAYS))
+    tg_text = format_telegram_message(upcoming_email, recent_email, subject_date)
 
     if args.dry_run:
         print("\n===== DRY RUN: email subject =====")
@@ -530,6 +627,13 @@ def main():
             logging.warning("Telegram send failed (non-fatal): %s", e)
     else:
         logging.warning("No Telegram token available — skipping Telegram.")
+
+    # Commit DB back to repo
+    commit_file_if_changed(
+        filepath="db/trading.db",
+        message="chore: update trading.db — corporate actions [skip ci]",
+        repo_root=repo_root(),
+    )
 
 
 if __name__ == "__main__":
