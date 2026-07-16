@@ -101,10 +101,14 @@ def main():
         log("✅ SCRIPT COMPLETED.")
         return
 
-    # --------- 2. BATCH UPDATE TASK (Green only) ---------
+    # --------- 2. BATCH UPDATE TASK (Green + Red both required) ---------
     if green_p1 > 0:
-        log("UPDATE TASK: Looking for 'Update' rows in Green Sheet")
-        updates = get_rows_with_action(green_rows, "update")
+        if red_p1 > 0:
+            log("UPDATE TASK: Looking for 'Update' rows in Green Sheet")
+            updates = get_rows_with_action(green_rows, "update")
+        else:
+            log("UPDATE TASK: Red P1=0 — cannot match updates against Red, skipping update.")
+            updates = []
 
         yellow_update_rows = []
         red_update_idxs = []
