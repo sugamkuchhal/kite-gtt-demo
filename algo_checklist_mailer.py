@@ -314,7 +314,9 @@ def run_removals_healer():
         t.get("error") for t in result.get("tabs", [])
     ) or any(
         f.get("error") for f in result.get("nse_lists", [])
-    )
+    ) or any(
+        t.get("error") for t in result.get("ticker_tabs", [])
+    ) or bool(result.get("tick_size_error"))
     return lines, error
 
 

@@ -26,6 +26,13 @@ Step 3 — NSE text lists (nse_stock_list.txt / nse_etf_list.txt)
   * A ticker not found in either file is recorded (non-fatal).
   * A file-write failure is recorded and the other file still runs.
 
+Step 4 — TICKER sheet data tabs (NSE_Stock_Data / NSE_ETF_Data)
+  * Full ticker (e.g. NSE:RELIANCE) is matched against column A.
+  * NSE_Stock_Data is searched first; if not found, NSE_ETF_Data is tried.
+  * Matching row is deleted and the block compacted upward.
+  * After all deletions, waits 15s for TICKERS_TICK_SIZE formulas to recalc,
+    then runs zerodha_tick_size.py to refresh tick sizes.
+
 Can be run standalone (manual use) or imported by the mailer.
 """
 
@@ -34,6 +41,9 @@ from pathlib import Path
 
 import gspread
 from google.oauth2.service_account import Credentials
+
+import subprocess
+import time
 
 from runtime_paths import get_creds_path, repo_root
 from ref_sheets_utils import resolve_sheet_id
@@ -60,6 +70,12 @@ NSE_LIST_FILES = [
     "nse_stock_list.txt",
     "nse_etf_list.txt",
 ]
+
+TICKER_DATA_REF  = "TICKER"
+TICKER_DATA_TABS = ["NSE_Stock_Data", "NSE_ETF_Data"]
+TICKER_COL       = 0   # column A (0-indexed)
+TICK_SIZE_SCRIPT = "zerodha_tick_size.py"
+TICK_SIZE_RECALC_WAIT = 15   # seconds to wait for formula recalc after deletion
 
 SERVICE_CREDS = str(get_creds_path())
 
@@ -224,6 +240,128 @@ def purge_nse_lists(tickers: list) -> list:
     return results
 
 
+
+def purge_ticker_data_tab(client, sheet_id, tab_name, remove_set):
+    """
+    Searches column A of tab_name for tickers in remove_set (exact match).
+    Deletes matching rows and compacts the block upward.
+
+    Returns a result dict for reporting.
+    """
+    ws = client.open_by_key(sheet_id).worksheet(tab_name)
+    all_values = ws.get_all_values()
+    if not all_values:
+        return {"tab": tab_name, "purged": 0, "purged_tickers": [], "not_found": sorted(remove_set), "error": None}
+
+    header   = all_values[0]
+    data     = all_values[1:]
+    old_len  = len(data)
+    num_cols = len(header)
+
+    keep_rows = []
+    found = set()
+    for row in data:
+        padded = row + [""] * max(0, num_cols - len(row))
+        ticker = padded[TICKER_COL].strip()
+        if ticker in remove_set:
+            found.add(ticker)
+        else:
+            keep_rows.append(padded[:num_cols])
+
+    not_found = sorted(remove_set - found)
+    purged    = old_len - len(keep_rows)
+
+    if purged > 0:
+        if keep_rows:
+            ws.update(
+                f"A2:{chr(64 + num_cols)}{len(keep_rows) + 1}",
+                keep_rows,
+                value_input_option="RAW",
+            )
+        ws.batch_clear([f"A{len(keep_rows) + 2}:{chr(64 + num_cols)}{old_len + 1}"])
+        logging.info(
+            "[%s] purged %d row(s) (%s); %d row(s) remain.",
+            tab_name, purged, ", ".join(sorted(found)), len(keep_rows),
+        )
+    else:
+        logging.info("[%s] no matching rows — tab unchanged.", tab_name)
+
+    return {
+        "tab":            tab_name,
+        "purged":         purged,
+        "purged_tickers": sorted(found),
+        "not_found":      not_found,
+        "error":          None,
+    }
+
+
+def purge_ticker_data_tabs(client, remove_set):
+    """
+    Searches NSE_Stock_Data then NSE_ETF_Data for each ticker.
+    A ticker is only looked up in the second tab if not found in the first.
+
+    Returns a list of per-tab result dicts.
+    """
+    sheet_id = resolve_sheet_id(TICKER_DATA_REF)
+    results  = []
+
+    # Track which tickers still need to be found after each tab
+    remaining = set(remove_set)
+
+    for tab_name in TICKER_DATA_TABS:
+        if not remaining:
+            break
+        try:
+            res = purge_ticker_data_tab(client, sheet_id, tab_name, remaining)
+            results.append(res)
+            # Remove found tickers from remaining so they aren't searched again
+            remaining -= set(res["purged_tickers"])
+        except Exception as e:
+            logging.exception("[%s] ticker data purge failed: %s", tab_name, e)
+            results.append({
+                "tab":            tab_name,
+                "purged":         0,
+                "purged_tickers": [],
+                "not_found":      sorted(remaining),
+                "error":          str(e),
+            })
+
+    if remaining:
+        logging.warning("Tickers not found in any data tab: %s", ", ".join(sorted(remaining)))
+
+    return results
+
+
+def run_tick_size_script():
+    """
+    Waits for sheet formulas to recalc, then runs zerodha_tick_size.py.
+    Returns (lines, error_bool).
+    """
+    logging.info(
+        "Waiting %ds for TICKERS_TICK_SIZE formulas to recalc...", TICK_SIZE_RECALC_WAIT
+    )
+    time.sleep(TICK_SIZE_RECALC_WAIT)
+
+    root  = repo_root()
+    lines = []
+    logging.info("Running %s ...", TICK_SIZE_SCRIPT)
+    proc = subprocess.Popen(
+        ["python3", TICK_SIZE_SCRIPT],
+        cwd=str(root),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    for line in proc.stdout:
+        line = line.rstrip("\n")
+        print(line, flush=True)
+        lines.append(line)
+    rc = proc.wait()
+    lines.append(f"exit code: {rc}")
+    logging.info("%s finished with exit code %d.", TICK_SIZE_SCRIPT, rc)
+    return lines, rc != 0
+
 def run_removals():
     """
     Full removals cycle. Returns a result dict:
@@ -236,7 +374,7 @@ def run_removals():
     A per-tab or per-file failure is recorded in that entry's result dict
     and the remaining steps still run.
     """
-    result = {"removed": [], "tabs": [], "nse_lists": [], "error": None}
+    result = {"removed": [], "tabs": [], "nse_lists": [], "ticker_tabs": [], "tick_size_lines": [], "tick_size_error": False, "error": None}
 
     client = get_client()
 
@@ -279,6 +417,23 @@ def run_removals():
     except Exception as e:
         logging.exception("NSE list purge failed: %s", e)
         result["nse_lists"] = [{"file": f, "error": str(e)} for f in NSE_LIST_FILES]
+
+    # Step 4: purge TICKER sheet data tabs + refresh tick sizes
+    logging.info("Purging tickers from TICKER sheet data tabs...")
+    try:
+        result["ticker_tabs"] = purge_ticker_data_tabs(client, remove_set)
+    except Exception as e:
+        logging.exception("Ticker data tab purge failed: %s", e)
+        result["ticker_tabs"] = [{"tab": t, "error": str(e)} for t in TICKER_DATA_TABS]
+
+    try:
+        lines, error = run_tick_size_script()
+        result["tick_size_lines"] = lines
+        result["tick_size_error"] = error
+    except Exception as e:
+        logging.exception("Tick size script failed: %s", e)
+        result["tick_size_lines"] = [str(e)]
+        result["tick_size_error"] = True
 
     logging.info("Removals processing complete.")
     return result
