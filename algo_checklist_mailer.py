@@ -477,6 +477,73 @@ def parse_args():
     p.add_argument("--emails", required=True, help="Comma-separated list of recipient emails")
     return p.parse_args()
 
+
+# ==========================
+# GID + URL population
+# ==========================
+COL_F = 5   # Spreadsheet ID (0-indexed)
+COL_G = 6   # Tab name
+COL_I = 8   # GID — populated here
+COL_J = 9   # URL — populated here
+GID_DATA_START_ROW = 2
+
+def populate_gids_and_urls(ws):
+    """
+    Step 0 — run before reading the checklist.
+    For each row where column F (spreadsheet ID) and G (tab name) are filled
+    but column I (GID) or J (URL) are empty, fetch the GID and write both
+    I and J in a single batch update.
+    Spreadsheets are opened once and cached.
+    """
+    scope = ["https://www.googleapis.com/auth/spreadsheets"]
+    creds = Credentials.from_service_account_file(SERVICE_CREDS, scopes=scope)
+    client = gspread.authorize(creds)
+
+    all_rows = ws.get_all_values()
+    data_rows = all_rows[GID_DATA_START_ROW - 1:]
+
+    cache = {}   # spreadsheet_id -> {tab_title: gid}
+    updates = [] # gspread.Cell list
+
+    for i, row in enumerate(data_rows):
+        sheet_row = GID_DATA_START_ROW + i
+        padded = row + [""] * max(0, COL_J + 1 - len(row))
+
+        spreadsheet_id = padded[COL_F].strip()
+        tab_name_cell  = padded[COL_G].strip()
+        current_i      = padded[COL_I].strip()
+        current_j      = padded[COL_J].strip()
+
+        if not spreadsheet_id or not tab_name_cell:
+            continue
+        if current_i and current_j:
+            continue  # both already filled
+
+        if spreadsheet_id not in cache:
+            logging.info("GID populate: opening spreadsheet %s", spreadsheet_id)
+            try:
+                wb = client.open_by_key(spreadsheet_id)
+                cache[spreadsheet_id] = {s.title: s.id for s in wb.worksheets()}
+            except Exception as e:
+                logging.warning("GID populate: could not open %s: %s", spreadsheet_id, e)
+                cache[spreadsheet_id] = {}
+
+        gid = cache[spreadsheet_id].get(tab_name_cell)
+        if gid is None:
+            logging.warning("GID populate: tab '%s' not found in %s", tab_name_cell, spreadsheet_id)
+            continue
+
+        url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={gid}"
+        updates.append(gspread.Cell(row=sheet_row, col=COL_I + 1, value=str(gid)))
+        updates.append(gspread.Cell(row=sheet_row, col=COL_J + 1, value=url))
+        logging.info("GID populate: row %d -> GID=%s", sheet_row, gid)
+
+    if updates:
+        ws.update_cells(updates, value_input_option="RAW")
+        logging.info("GID populate: wrote %d cell(s).", len(updates))
+    else:
+        logging.info("GID populate: nothing to update.")
+
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 
@@ -484,6 +551,15 @@ def main():
     recipients = [e.strip() for e in args.emails.split(",") if e.strip()]
 
     sheet_id = resolve_sheet_id(ref_sheets)
+
+    # Step 0: populate GIDs and URLs in the Checklist tab before reading
+    logging.info("Step 0: populating GIDs and URLs in Checklist tab...")
+    _scope = ["https://www.googleapis.com/auth/spreadsheets"]
+    _creds = Credentials.from_service_account_file(SERVICE_CREDS, scopes=_scope)
+    _client = gspread.authorize(_creds)
+    _ws = _client.open_by_key(sheet_id).worksheet(tab_name)
+    populate_gids_and_urls(_ws)
+
     rows = read_sheet(sheet_id, tab_name, SERVICE_CREDS)
     data = rows[1:]  # skip header row
 
