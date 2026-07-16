@@ -495,46 +495,64 @@ def main():
 
     html_before, has_active, active_flagged, inactive_flagged = format_checklist_email(data, subject_date)
 
-    # Healing detection: each healer reads its own signal cell. A detection
-    # failure is reported as a failed healer (visible in the combined email)
-    # rather than silently skipped.
-    healer_results = []
-    triggered = []
-    for healer in HEALERS:
-        try:
-            if healer["detect"](sheet_id):
-                triggered.append(healer)
-        except Exception as e:
-            logging.exception("Healer '%s' detection failed: %s", healer["name"], e)
-            healer_results.append({
-                "name": healer["name"],
-                "lines": [f"Detection failed: {e}"],
-                "error": True,
-            })
+    # Healing runs up to MAX_HEAL_ROUNDS times. After each round the script
+    # waits for sheet formulas to settle, then re-detects to catch any new
+    # issues that surfaced. All rounds are labelled and reported in one email.
+    MAX_HEAL_ROUNDS = 2
+    all_healer_results = []
+    any_healing_ran = False
 
-    if triggered or healer_results:
-        # Healing cycle: run triggered healers in registry order, wait for
-        # sheet formulas to heal, re-read the checklist, and send ONE
-        # combined email (always, even on failure).
+    for round_num in range(1, MAX_HEAL_ROUNDS + 1):
+        round_label = f"Round {round_num}"
+        triggered = []
+        for healer in HEALERS:
+            try:
+                if healer["detect"](sheet_id):
+                    triggered.append(healer)
+            except Exception as e:
+                logging.exception(
+                    "Healer '%s' detection failed (round %d): %s", healer["name"], round_num, e
+                )
+                all_healer_results.append({
+                    "name": f"[{round_label}] {healer['name']}",
+                    "lines": [f"Detection failed: {e}"],
+                    "error": True,
+                })
+                any_healing_ran = True
+
+        if not triggered:
+            logging.info("%s: no healers triggered — stopping.", round_label)
+            break
+
+        any_healing_ran = True
         for healer in triggered:
-            logging.info("Healing: running '%s' ...", healer["name"])
+            logging.info("%s: running '%s' ...", round_label, healer["name"])
             try:
                 lines, error = healer["run"]()
             except Exception as e:
-                logging.exception("Healer '%s' crashed: %s", healer["name"], e)
+                logging.exception(
+                    "Healer '%s' crashed (round %d): %s", healer["name"], round_num, e
+                )
                 lines, error = [f"Healer crashed: {e}"], True
-            healer_results.append({"name": healer["name"], "lines": lines, "error": error})
+            all_healer_results.append({
+                "name": f"[{round_label}] {healer['name']}",
+                "lines": lines,
+                "error": error,
+            })
 
-        logging.info("Waiting %d seconds for sheet formulas to heal...", HEAL_WAIT_SECS)
+        logging.info(
+            "%s: waiting %d seconds for sheet formulas to settle...", round_label, HEAL_WAIT_SECS
+        )
         time.sleep(HEAL_WAIT_SECS)
 
+    if any_healing_ran:
         rows_after = read_sheet(sheet_id, tab_name, SERVICE_CREDS)
         html_after, _, active_after, inactive_after = format_checklist_email(rows_after[1:], subject_date)
 
-        html_body = format_combined_email(html_before, healer_results, html_after)
+        html_body = format_combined_email(html_before, all_healer_results, html_after)
         tg_text = format_combined_telegram(
             (active_flagged, inactive_flagged),
-            healer_results,
+            all_healer_results,
             (active_after, inactive_after),
             subject_date,
         )
