@@ -19,16 +19,25 @@ Step 2 — FEED sheet tabs (ref sheet: FEED)
   * A failure on one tab is recorded and the remaining tabs still run,
     so the report always reflects the full picture.
 
+Step 3 — NSE text lists (nse_stock_list.txt / nse_etf_list.txt)
+  * Exchange prefix is stripped first (NSE:RELIANCE -> RELIANCE).
+  * Each stripped ticker is looked up in both files; matching lines are
+    removed, the file is written back, and committed via git_utils.
+  * A ticker not found in either file is recorded (non-fatal).
+  * A file-write failure is recorded and the other file still runs.
+
 Can be run standalone (manual use) or imported by the mailer.
 """
 
 import logging
+from pathlib import Path
 
 import gspread
 from google.oauth2.service_account import Credentials
 
-from runtime_paths import get_creds_path
+from runtime_paths import get_creds_path, repo_root
 from ref_sheets_utils import resolve_sheet_id
+from git_utils import commit_file_if_changed
 
 # ==========================
 # Config (constants)
@@ -46,6 +55,11 @@ FEED_TABS = [
 ]
 FEED_NUM_COLS = 3  # A:C -> DATE | TICKER | CATEGORY
 FEED_TICKER_COL = 1  # column B (0-indexed)
+
+NSE_LIST_FILES = [
+    "nse_stock_list.txt",
+    "nse_etf_list.txt",
+]
 
 SERVICE_CREDS = str(get_creds_path())
 
@@ -126,18 +140,103 @@ def purge_feed_tab(client, sheet_id, tab_name, remove_set):
     }
 
 
+def _strip_exchange(ticker: str) -> str:
+    """Strip exchange prefix: 'NSE:RELIANCE' -> 'RELIANCE', 'RELIANCE' -> 'RELIANCE'."""
+    return ticker.split(":")[-1].strip()
+
+
+def purge_nse_lists(tickers: list) -> list:
+    """
+    Removes stripped tickers from nse_stock_list.txt and nse_etf_list.txt.
+
+    Each ticker has its exchange prefix stripped before matching
+    (e.g. NSE:RELIANCE -> RELIANCE). Each file is written back and
+    committed via git_utils if changed.
+
+    Returns a list of per-file result dicts:
+      {
+        "file":            filename (str),
+        "remove_set":      stripped tickers looked up (set),
+        "purged":          count of lines removed (int),
+        "purged_tickers":  tickers actually found and removed (sorted list),
+        "not_found":       tickers not present in this file (sorted list),
+        "committed":       True if git commit was made (bool),
+        "error":           None | str
+      }
+    """
+    stripped = {_strip_exchange(t) for t in tickers}
+    logging.info("NSE list purge — looking for: %s", ", ".join(sorted(stripped)))
+
+    root = repo_root()
+    results = []
+
+    for filename in NSE_LIST_FILES:
+        filepath = root / filename
+        res = {
+            "file": filename,
+            "remove_set": stripped,
+            "purged": 0,
+            "purged_tickers": [],
+            "not_found": [],
+            "committed": False,
+            "error": None,
+        }
+
+        try:
+            lines = filepath.read_text(encoding="utf-8").splitlines()
+            keep, found = [], set()
+            for line in lines:
+                symbol = line.strip()
+                if symbol in stripped:
+                    found.add(symbol)
+                else:
+                    keep.append(line)
+
+            not_found = sorted(stripped - found)
+            res["purged"] = len(found)
+            res["purged_tickers"] = sorted(found)
+            res["not_found"] = not_found
+
+            for t in not_found:
+                logging.info("[%s] '%s' not found — skipping.", filename, t)
+
+            if found:
+                filepath.write_text("\n".join(keep) + ("\n" if keep else ""), encoding="utf-8")
+                logging.info(
+                    "[%s] removed %d ticker(s): %s; %d line(s) remain.",
+                    filename, len(found), ", ".join(sorted(found)), len(keep),
+                )
+                committed = commit_file_if_changed(
+                    filepath,
+                    f"healer: remove {', '.join(sorted(found))} from {filename}",
+                    repo_root=root,
+                )
+                res["committed"] = committed
+            else:
+                logging.info("[%s] no matching tickers — file unchanged.", filename)
+
+        except Exception as e:
+            logging.exception("[%s] purge failed: %s", filename, e)
+            res["error"] = str(e)
+
+        results.append(res)
+
+    return results
+
+
 def run_removals():
     """
     Full removals cycle. Returns a result dict:
       {
-        "removed": [tickers read from Master_Live!H3:H],
-        "tabs": [per-tab result dicts (see purge_feed_tab)],
-        "error": None | str  (fatal error reading ticker list, if any)
+        "removed":   [tickers read from Master_Live!H3:H],
+        "tabs":      [per-tab result dicts (see purge_feed_tab)],
+        "nse_lists": [per-file result dicts (see purge_nse_lists)],
+        "error":     None | str  (fatal error reading ticker list, if any)
       }
-    A per-tab failure is recorded in that tab's result dict and the
-    remaining tabs still run.
+    A per-tab or per-file failure is recorded in that entry's result dict
+    and the remaining steps still run.
     """
-    result = {"removed": [], "tabs": [], "error": None}
+    result = {"removed": [], "tabs": [], "nse_lists": [], "error": None}
 
     client = get_client()
 
@@ -172,6 +271,14 @@ def run_removals():
                 "remaining": None,
                 "error": str(e),
             })
+
+    # Step 3: purge NSE text lists
+    logging.info("Purging tickers from NSE text lists...")
+    try:
+        result["nse_lists"] = purge_nse_lists(removed)
+    except Exception as e:
+        logging.exception("NSE list purge failed: %s", e)
+        result["nse_lists"] = [{"file": f, "error": str(e)} for f in NSE_LIST_FILES]
 
     logging.info("Removals processing complete.")
     return result

@@ -312,6 +312,8 @@ def run_removals_healer():
         root.removeHandler(handler)
     error = bool(result.get("error")) or any(
         t.get("error") for t in result.get("tabs", [])
+    ) or any(
+        f.get("error") for f in result.get("nse_lists", [])
     )
     return lines, error
 
