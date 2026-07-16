@@ -21,6 +21,7 @@ from runtime_paths import get_creds_path, get_smtp_token_path, get_telegram_toke
 from ref_sheets_utils import resolve_sheet_id
 from remover_old_tickers import run_removals
 from remover_profitable_sip_reg import run_sip_reg
+from remover_delisted import run_delisted
 
 import atexit
 from script_logger import log_start, log_end
@@ -48,6 +49,9 @@ SIP_SIGNAL_REF = "KWK"               # profitable SIP REG signal lives on the KW
 SIP_SIGNAL_TAB = "OLD_SIP_REG_List"
 SIP_SIGNAL_CELL = "Q1"
 NORMALIZE_SCRIPT = "combined_normalize_run.sh"
+DELISTED_SIGNAL_REF  = "PORTFOLIO"
+DELISTED_SIGNAL_TAB  = "DELISTED"
+DELISTED_SIGNAL_CELL = "A1"
 HEAL_WAIT_SECS = 60
 HEALER_LOG_TAIL = 10                 # log lines per healer shown in comms
 
@@ -357,6 +361,20 @@ def run_normalize_healer():
     return lines, rc != 0
 
 
+def run_delisted_healer():
+    """Run the delisted ticker mover, capturing its log output."""
+    lines = []
+    handler = _ListLogHandler(lines)
+    handler.setFormatter(logging.Formatter("%(levelname)s: %(message)s"))
+    root = logging.getLogger()
+    root.addHandler(handler)
+    try:
+        result = run_delisted()
+    finally:
+        root.removeHandler(handler)
+    return lines, bool(result.get("error"))
+
+
 HEALERS = [
     {
         "name": "Removals",
@@ -376,6 +394,13 @@ HEALERS = [
         "detect": lambda sheet_id: read_signal_cell(
             sheet_id, tab_name, NORMALIZE_SIGNAL_CELL, SERVICE_CREDS) > 0,
         "run": run_normalize_healer,
+    },
+    {
+        "name": "Order Tickers w/o Category",
+        "detect": lambda sheet_id: read_signal_cell(
+            resolve_sheet_id(DELISTED_SIGNAL_REF), DELISTED_SIGNAL_TAB,
+            DELISTED_SIGNAL_CELL, SERVICE_CREDS) > 0,
+        "run": run_delisted_healer,
     },
 ]
 
