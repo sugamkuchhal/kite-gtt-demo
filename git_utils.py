@@ -96,10 +96,10 @@ def commit_file_if_changed(
 
         # Pull rebase then push — use authenticated remote if available
         if auth_remote:
-            _run(["git", "pull", "--rebase", auth_remote, "main"])
+            _run(["git", "pull", "--rebase", "--autostash", auth_remote, "main"])
             _run(["git", "push", auth_remote, "main"])
         else:
-            _run(["git", "pull", "--rebase", "origin", "main"])
+            _run(["git", "pull", "--rebase", "--autostash", "origin", "main"])
             _run(["git", "push", "origin", "main"])
 
         log.info(f"Pushed to origin/main.")
