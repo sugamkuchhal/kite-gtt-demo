@@ -69,7 +69,7 @@ def main():
 
 
 if __name__ == "__main__":
-    _ctx = log_start("data_val")
+    _ctx = log_start("algo_data_val")
     try:
         main()
         raise SystemExit(0)
@@ -77,7 +77,7 @@ if __name__ == "__main__":
         logging.warning("Interrupted by user.")
         raise SystemExit(130)
     except Exception:
-        logging.exception("data_val failed.")
+        logging.exception("algo_data_val failed.")
         raise SystemExit(1)
     finally:
         log_end(_ctx)
