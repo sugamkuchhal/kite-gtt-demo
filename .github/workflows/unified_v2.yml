@@ -169,6 +169,13 @@ jobs:
           sudo dpkg -i google-chrome-stable_current_amd64.deb || sudo apt-get -fy install
           google-chrome --version
 
+      - name: Cache venv
+        uses: actions/cache@v4
+        if: ${{ steps.plan.outputs.should_run == 'true' }}
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+
       - name: Install dependencies
         if: ${{ steps.plan.outputs.should_run == 'true' }}
         run: |
