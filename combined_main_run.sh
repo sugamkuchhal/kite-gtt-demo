@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# python3 algo_date_ext.py
-# python3 algo_data_val.py
+python3 algo_date_ext.py
+python3 algo_data_val.py
 
 echo "Running: SGST Reversal Validation"
 python3 ops_sort.py --ref-sheets "SGST" --green-tab "GTT_List" --red-tab "Old_GTT_List" --yellow-tab "Action_List"
