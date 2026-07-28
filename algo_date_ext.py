@@ -97,7 +97,7 @@ def main():
 
 
 if __name__ == "__main__":
-    _ctx = log_start("date_ext")
+    _ctx = log_start("algo_date_ext")
     try:
         main()
         raise SystemExit(0)
@@ -105,7 +105,7 @@ if __name__ == "__main__":
         logging.warning("Interrupted by user.")
         raise SystemExit(130)
     except Exception:
-        logging.exception("date_ext failed.")
+        logging.exception("algo_date_ext failed.")
         raise SystemExit(1)
     finally:
         log_end(_ctx)

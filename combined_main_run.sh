@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# python3 date_ext.py
+# python3 algo_date_ext.py
 # python3 data_val.py
 
 echo "Running: SGST Reversal Validation"
