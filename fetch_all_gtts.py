@@ -62,7 +62,7 @@ def fetch_all_gtts():
         values = [headers] + [[row.get(h, "") for h in headers] for row in formatted]
         
         # Write to sheet
-        sheet.clear()
+        sheet.batch_clear(["A:K"])
         sheet.update(values=values, range_name="A1")
         
         logging.info(f"✅ {len(formatted)} GTTs written to sheet: {tab_name}")
