@@ -65,7 +65,7 @@ TAB_META = {
     },
     "ORDERS": {
         "real_cols": ["price", "average_price"],
-        "int_cols":  ["instrument_token", "quantity", "filled_qty"],
+        "int_cols":  ["quantity", "filled_qty"],
         "date_cols": [],
         "ts_cols":   ["order_timestamp", "fetched_at"],
     },

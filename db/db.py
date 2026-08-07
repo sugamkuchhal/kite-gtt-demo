@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS gtts (
 CREATE TABLE IF NOT EXISTS orders (
     order_id            TEXT    PRIMARY KEY,
     exchange_order_id   TEXT,
-    instrument_token    INTEGER,
+    instrument_token    TEXT,
     tradingsymbol       TEXT    NOT NULL,
     transaction_type    TEXT,
     order_type          TEXT,

@@ -32,40 +32,39 @@ def fetch_all_orders():
             logging.info("No orders found.")
             return
 
+        headers = [
+            "Order ID", "Exchange Order ID", "Instrument Token",
+            "Trading Symbol", "Transaction Type", "Order Type", "Product",
+            "Quantity", "Filled Qty", "Price", "Average Price",
+            "Status", "Order Timestamp",
+        ]
+
         formatted = []
         for o in orders:
-            row = {
-                "Order ID": o.get("order_id"),
-                "Exchange Order ID": o.get("exchange_order_id"),
-                "Instrument Token": o.get("instrument_token"),
-                "Trading Symbol": o.get("tradingsymbol"),
-                "Transaction Type": o.get("transaction_type"),
-                "Order Type": o.get("order_type"),
-                "Product": o.get("product"),
-                "Quantity": o.get("quantity"),
-                "Filled Qty": o.get("filled_quantity"),
-                "Price": o.get("price"),
-                "Average Price": o.get("average_price"),
-                "Status": o.get("status"),
-                "Order Timestamp": o.get("order_timestamp"),
-            }
+            ts = o.get("order_timestamp")
+            if isinstance(ts, datetime):
+                ts = ts.strftime("%Y-%m-%d %H:%M:%S")
+            row = [
+                str(o.get("order_id") or ""),
+                str(o.get("exchange_order_id") or ""),
+                str(o.get("instrument_token") or ""),
+                o.get("tradingsymbol"),
+                o.get("transaction_type"),
+                o.get("order_type"),
+                o.get("product"),
+                int(o.get("quantity") or 0),
+                int(o.get("filled_quantity") or 0),
+                float(o.get("price") or 0.0),
+                float(o.get("average_price") or 0.0),
+                o.get("status"),
+                ts,
+            ]
             formatted.append(row)
-            # logging.info(f"Order Row: {row}")
-        
+
         client = get_gsheet_client()
         sheet = client.open_by_key(sheet_id).worksheet(tab_name_orders)
-        
-        headers = list(formatted[0].keys())
 
-        values = [headers]
-        for row in formatted:
-            processed_row = []
-            for h in headers:
-                val = row.get(h, "")
-                if isinstance(val, datetime):
-                    val = val.strftime("%Y-%m-%d %H:%M:%S")
-                processed_row.append(val)
-            values.append(processed_row)
+        values = [headers] + formatted
         
         sheet.clear()
         sheet.update(values=values, range_name="A1")
@@ -94,9 +93,9 @@ def write_orders_to_db(orders):
         if isinstance(ts, datetime):
             ts = ts.isoformat()
         rows.append((
-            o.get("order_id"),
-            o.get("exchange_order_id"),
-            o.get("instrument_token"),
+            str(o.get("order_id") or ""),
+            str(o.get("exchange_order_id") or ""),
+            str(o.get("instrument_token") or ""),
             o.get("tradingsymbol"),
             o.get("transaction_type"),
             o.get("order_type"),
