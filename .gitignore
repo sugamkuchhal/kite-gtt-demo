@@ -3,9 +3,6 @@
 __pycache__/
 *.pyc
 
-# db
-db/trading.db
-
 # Binaries & drivers
 chromedriver
 
