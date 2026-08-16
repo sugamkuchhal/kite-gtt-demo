@@ -8,28 +8,44 @@ from date_ext_utils import get_client, get_ws, init_date
 LOOP_INTERVAL = 70  # seconds between iterations
 
 
-def run_until_done(ref_sheets, tab_name, src_cell="B1", dest_cell="A2", post_copy_fn=None):
+def write_r1(value):
+    try:
+        gc = get_client()
+        flag_ws = gc.open_by_key(resolve_sheet_id("PORTFOLIO")).worksheet("ALL_OLD_GTTs")
+        flag_ws.update(range_name="R1", values=[[value]])
+    except Exception:
+        try:
+            gc = get_client()
+            flag_ws = gc.open_by_key(resolve_sheet_id("PORTFOLIO")).worksheet("ALL_OLD_GTTs")
+            flag_ws.update(range_name="R1", values=[[False]])
+        except Exception:
+            pass
+
+
+def run_until_done(ref_sheets, tab_name, src_cell="B1", dest_cell="A2"):
     while True:
         sh, ws = get_ws(ref_sheets, tab_name)
         result = init_date(sh.title, ws, src_cell, ws, dest_cell)
         if result is None:
             break
-        if post_copy_fn:
-            post_copy_fn(result)
         print(f"{tab_name} -> ⏳ Next iteration in {LOOP_INTERVAL}s...")
         time.sleep(LOOP_INTERVAL)
 
 
 def main():
-    def write_r1(value):
+    # KWK/Friday_Identifier — writes bool(changed) to PORTFOLIO/ALL_OLD_GTTs!R1
+    while True:
+        sh4, ws4 = get_ws("KWK", "Friday_Identifier")
         try:
-            gc = get_client()
-            flag_ws = gc.open_by_key(resolve_sheet_id("PORTFOLIO")).worksheet("ALL_OLD_GTTs")
-            flag_ws.update(range_name="R1", values=[[value]])
+            changed = init_date(sh4.title, ws4, "B1", ws4, "A2")
+            write_r1(bool(changed))
         except Exception:
-            pass
+            write_r1(False)
+        if changed is None:
+            break
+        print(f"Friday_Identifier -> ⏳ Next iteration in {LOOP_INTERVAL}s...")
+        time.sleep(LOOP_INTERVAL)
 
-    run_until_done("KWK", "Friday_Identifier", post_copy_fn=write_r1)
     run_until_done("PORTFOLIO", "CREDIT_CANDIDATES", src_cell="K24", dest_cell="K23")
     run_until_done("RTP", "DATE_Identifier")
     run_until_done("HUNDRED", "OPEN_LIST")
