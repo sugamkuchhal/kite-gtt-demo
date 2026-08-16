@@ -33,15 +33,19 @@ def run_until_done(ref_sheets, tab_name, src_cell="B1", dest_cell="A2"):
 
 
 def main():
-    # KWK/Friday_Identifier — writes bool(changed) to PORTFOLIO/ALL_OLD_GTTs!R1
+    # KWK/Friday_Identifier — checks A2 before and after to determine if changed
     while True:
         sh4, ws4 = get_ws("KWK", "Friday_Identifier")
         try:
-            changed = init_date(sh4.title, ws4, "B1", ws4, "A2")
-            write_r1(bool(changed))
+            before = ws4.acell("A2").value
+            result = init_date(sh4.title, ws4, "B1", ws4, "A2")
+            after = ws4.acell("A2").value
+            changed = (after != before)
+            write_r1(changed)
         except Exception:
             write_r1(False)
-        if changed is None:
+            result = None
+        if result is None:
             break
         print(f"Friday_Identifier -> ⏳ Next iteration in {LOOP_INTERVAL}s...")
         time.sleep(LOOP_INTERVAL)
