@@ -15,7 +15,7 @@ def run_until_done(ref_sheets, tab_name, src_cell="B1", dest_cell="A2", post_cop
         if result is None:
             break
         if post_copy_fn:
-            post_copy_fn(True)
+            post_copy_fn(result)
         print(f"{tab_name} -> ⏳ Next iteration in {LOOP_INTERVAL}s...")
         time.sleep(LOOP_INTERVAL)
 
