@@ -13,8 +13,6 @@ def run_until_done(ref_sheets, tab_name, src_cell="B1", dest_cell="A2", post_cop
         sh, ws = get_ws(ref_sheets, tab_name)
         result = init_date(sh.title, ws, src_cell, ws, dest_cell)
         if result is None:
-            if post_copy_fn:
-                post_copy_fn(False)
             break
         if post_copy_fn:
             post_copy_fn(True)
@@ -23,7 +21,6 @@ def run_until_done(ref_sheets, tab_name, src_cell="B1", dest_cell="A2", post_cop
 
 
 def main():
-    # KWK/Friday_Identifier — writes result to PORTFOLIO/ALL_OLD_GTTs!R1
     def write_r1(value):
         try:
             gc = get_client()
