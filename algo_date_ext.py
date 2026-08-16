@@ -1,36 +1,42 @@
 import logging
+import time
 
 from ref_sheets_utils import resolve_sheet_id
 from script_logger import log_start, log_end
 from date_ext_utils import get_client, get_ws, init_date
 
+LOOP_INTERVAL = 70  # seconds between iterations
+
+
+def run_until_done(ref_sheets, tab_name, src_cell="B1", dest_cell="A2", post_copy_fn=None):
+    while True:
+        sh, ws = get_ws(ref_sheets, tab_name)
+        result = init_date(sh.title, ws, src_cell, ws, dest_cell)
+        if result is None:
+            if post_copy_fn:
+                post_copy_fn(False)
+            break
+        if post_copy_fn:
+            post_copy_fn(True)
+        print(f"{tab_name} -> ⏳ Next iteration in {LOOP_INTERVAL}s...")
+        time.sleep(LOOP_INTERVAL)
+
 
 def main():
-    sh4, ws4 = get_ws("KWK", "Friday_Identifier")
-    try:
-        changed = init_date(sh4.title, ws4, "B1", ws4, "A2")
-        gc = get_client()
-        flag_ws = gc.open_by_key(resolve_sheet_id("PORTFOLIO")).worksheet("ALL_OLD_GTTs")
-        flag_ws.update(range_name="R1", values=[[bool(changed)]])
-    except Exception:
+    # KWK/Friday_Identifier — writes result to PORTFOLIO/ALL_OLD_GTTs!R1
+    def write_r1(value):
         try:
             gc = get_client()
             flag_ws = gc.open_by_key(resolve_sheet_id("PORTFOLIO")).worksheet("ALL_OLD_GTTs")
-            flag_ws.update(range_name="R1", values=[[False]])
+            flag_ws.update(range_name="R1", values=[[value]])
         except Exception:
             pass
 
-    sh5, ws5 = get_ws("PORTFOLIO", "CREDIT_CANDIDATES")
-    init_date(sh5.title, ws5, "K24", ws5, "K23")
-
-    sh6, ws6 = get_ws("RTP", "DATE_Identifier")
-    init_date(sh6.title, ws6, "B1", ws6, "A2")
-
-    sh7, ws7 = get_ws("HUNDRED", "OPEN_LIST")
-    init_date(sh7.title, ws7, "B1", ws7, "A2")
-
-    sh8, ws8 = get_ws("CONSOLIDATED", "OPEN_LIST")
-    init_date(sh8.title, ws8, "B1", ws8, "A2")
+    run_until_done("KWK", "Friday_Identifier", post_copy_fn=write_r1)
+    run_until_done("PORTFOLIO", "CREDIT_CANDIDATES", src_cell="K24", dest_cell="K23")
+    run_until_done("RTP", "DATE_Identifier")
+    run_until_done("HUNDRED", "OPEN_LIST")
+    run_until_done("CONSOLIDATED", "OPEN_LIST")
 
 
 if __name__ == "__main__":
