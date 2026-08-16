@@ -1,4 +1,5 @@
 import logging
+import time
 
 import atexit
 from script_logger import log_start, log_end
@@ -8,15 +9,24 @@ _RUN_CTX = log_start("prepare_feed_date_ext")
 atexit.register(log_end, _RUN_CTX)
 
 
+LOOP_INTERVAL = 70  # seconds between iterations
+
+
+def run_until_done(ref_sheets, tab_name):
+    while True:
+        sh, ws = get_ws(ref_sheets, tab_name)
+        result = init_date(sh.title, ws, "B1", ws, "A2")
+        if result is None:
+            # Future date — no more copying possible, stop
+            break
+        print(f"{tab_name} -> ⏳ Next iteration in {LOOP_INTERVAL}s...")
+        time.sleep(LOOP_INTERVAL)
+
+
 def main():
-    sh1, ws1 = get_ws("FEED", "SGST_OPEN_LIST")
-    init_date(sh1.title, ws1, "B1", ws1, "A2")
-
-    sh2, ws2 = get_ws("FEED", "SUPER_OPEN_LIST")
-    init_date(sh2.title, ws2, "B1", ws2, "A2")
-
-    sh3, ws3 = get_ws("FEED", "TURTLE_OPEN_LIST")
-    init_date(sh3.title, ws3, "B1", ws3, "A2")
+    run_until_done("FEED", "SGST_OPEN_LIST")
+    run_until_done("FEED", "SUPER_OPEN_LIST")
+    run_until_done("FEED", "TURTLE_OPEN_LIST")
 
 
 if __name__ == "__main__":
