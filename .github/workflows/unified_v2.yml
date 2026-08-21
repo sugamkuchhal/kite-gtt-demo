@@ -173,13 +173,13 @@ jobs:
         if: ${{ steps.plan.outputs.should_run == 'true' }}
         with:
           path: .venv
-          key: v2-venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('requirements.txt') }}
+          key: v3-venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('requirements.txt') }}
 
       - name: Install dependencies
         if: ${{ steps.plan.outputs.should_run == 'true' && steps.cache-venv.outputs.cache-hit != 'true' }}
         run: |
           set -euo pipefail
-          python3 -m venv .venv
+          python3 -m venv --copies .venv
           .venv/bin/pip install -r requirements.txt
 
       - name: Recreate non-auth secret files
