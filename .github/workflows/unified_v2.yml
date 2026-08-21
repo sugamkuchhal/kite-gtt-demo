@@ -173,7 +173,7 @@ jobs:
         if: ${{ steps.plan.outputs.should_run == 'true' }}
         with:
           path: .venv
-          key: v3-venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('requirements.txt') }}
+          key: v3-venv-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
 
       - name: Install dependencies
         if: ${{ steps.plan.outputs.should_run == 'true' && steps.cache-venv.outputs.cache-hit != 'true' }}
