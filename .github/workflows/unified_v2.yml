@@ -205,11 +205,18 @@ jobs:
           sudo -E bash -c '
             set -euo pipefail
             export GH_TOKEN="${GH_TOKEN:-}"
+            echo "=== DEBUG ==="
+            echo "CWD: $PWD"
+            echo "which python3: $(which python3 2>/dev/null || echo MISSING)"
+            echo "venv bin contents: $(ls .venv/bin/python* 2>/dev/null || echo NO VENV)"
             if [ -f .venv/bin/activate ]; then
               source .venv/bin/activate
+              echo "venv activated"
             else
               echo "::notice::No venv present; using system python."
             fi
+            python3 -c "import sys; print('"'"'executable:'"'"', sys.executable); import site; print('"'"'site-packages:'"'"', site.getsitepackages())"
+            echo "=== END DEBUG ==="
             export PATH="$PWD/bin:$PATH"
 
             ensure_token_cmd() {
