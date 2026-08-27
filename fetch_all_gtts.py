@@ -4,7 +4,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from kite_session import get_kite
-from google_sheets_utils import get_gsheet_client
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "db"))
@@ -62,8 +62,8 @@ def fetch_all_gtts():
         values = [headers] + [[row.get(h, "") for h in headers] for row in formatted]
         
         # Write to sheet
-        sheet.batch_clear(["A:K"])
-        sheet.update(values=values, range_name="A1")
+        gsheets_retry(sheet.batch_clear, ["A:K"])
+        gsheets_retry(sheet.update, values=values, range_name="A1")
         
         logging.info(f"✅ {len(formatted)} GTTs written to sheet: {tab_name}")
         

@@ -5,6 +5,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
+from google_sheets_utils import gsheets_retry
 
 import atexit
 from script_logger import log_start, log_end
@@ -27,7 +28,7 @@ def main():
     sheet_id = resolve_sheet_id(ref_sheets)
     sheet = client.open_by_key(sheet_id)
     worksheet = sheet.worksheet(tab_name)
-    data = worksheet.get_all_records()
+    data = gsheets_retry(worksheet.get_all_records)
 
     df = pd.DataFrame(data)
 
@@ -253,7 +254,7 @@ def main():
             ws = sheet.worksheet(title)
         except gspread.exceptions.WorksheetNotFound:
             ws = sheet.add_worksheet(title=title, rows="1000", cols="50")
-        ws.clear()
+        gsheets_retry(ws.clear)
 
         # Safe conversion: datetime → YYYY-MM-DD string
         def safe_value(val):
@@ -267,11 +268,11 @@ def main():
         df_data = df_data if isinstance(df_data, pd.DataFrame) else pd.DataFrame(df_data)
 
         if df_data.empty:
-            ws.update(values=[["(no data)"]])
+            gsheets_retry(ws.update, values=[["(no data)"]])
             return
 
         upload_values = [[safe_value(cell) for cell in row] for row in df_data.itertuples(index=False, name=None)]
-        ws.update(values=[df_data.columns.values.tolist()] + upload_values, value_input_option='USER_ENTERED')
+        gsheets_retry(ws.update, values=[df_data.columns.values.tolist()] + upload_values, value_input_option='USER_ENTERED')
 
         if apply_formulas:
             row_count = len(df_data) + 1
@@ -291,7 +292,7 @@ def main():
                     formulas = [[formula_map[col_name].format(r=r)] for r in range(2, row_count + 1)]
                     start_cell = gspread.utils.rowcol_to_a1(2, col_index)
                     end_cell = gspread.utils.rowcol_to_a1(row_count, col_index)
-                    ws.update(range_name=f"{start_cell}:{end_cell}", values=formulas, value_input_option='USER_ENTERED')
+                    gsheets_retry(ws.update, range_name=f"{start_cell}:{end_cell}", values=formulas, value_input_option='USER_ENTERED')
 
     # --- Prepare BUY_SELL_MATCHES DataFrame (sorted for readability) ---
     matches_df = pd.DataFrame(buy_sell_match_rows)
