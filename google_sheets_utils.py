@@ -53,34 +53,6 @@ def _call_with_retries(fn, *args, **kwargs):
 # Public alias for use in other modules
 gsheets_retry = _call_with_retries
 
-# ---- Retry wrapper for googleapiclient (HttpError) ----
-try:
-    from googleapiclient.errors import HttpError as _HttpError
-except ImportError:
-    _HttpError = None
-
-def _is_retriable_http(e: Exception) -> bool:
-    if _HttpError is None or not isinstance(e, _HttpError):
-        return False
-    try:
-        return int(e.resp.status) in (429, 500, 502, 503, 504)
-    except Exception:
-        return False
-
-def googleapi_retry(fn, *args, **kwargs):
-    """Retry a googleapiclient .execute() call on transient HttpError."""
-    attempts = int(os.getenv("GSHEETS_MAX_RETRIES", "6"))
-    base = float(os.getenv("GSHEETS_BACKOFF_BASE", "0.6"))
-    for i in range(attempts):
-        try:
-            return fn(*args, **kwargs)
-        except Exception as e:
-            if i == attempts - 1 or not _is_retriable_http(e):
-                raise
-            sleep_s = (base * (2 ** i)) + random.uniform(0, 0.2)
-            time.sleep(sleep_s)
-
-
 # ---- Auth unchanged ----
 def get_gsheet_client():
     scope = [
