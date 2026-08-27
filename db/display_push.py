@@ -21,36 +21,23 @@ import sys
 from datetime import datetime, timedelta, date
 from pathlib import Path
 
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "db"))
 
 from db import get_conn, init_db
-from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
-from google_sheets_utils import googleapi_retry
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 
 DB_VIEW_SHEET_ID = resolve_sheet_id("DB_VIEW")
 TABS             = ["HOLDINGS", "GTTS", "ORDERS", "MARKET_DATA", "CORP_ACTIONS"]
 EMAIL_WINDOW     = 7
-SCOPES           = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/spreadsheets",
-]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 log = logging.getLogger(__name__)
 
 
 # ── Tab column metadata — by column name ──────────────────────────────────────
-# real_cols  → float, display as #,##0.00
-# int_cols   → integer, display as number
-# date_cols  → date only, display as DD-MMM-YYYY
-# ts_cols    → timestamp with time, display as DD-MMM-YYYY HH:MM:SS
-
 TAB_META = {
     "HOLDINGS": {
         "real_cols": ["average_price", "last_price", "pnl"],
@@ -85,43 +72,25 @@ TAB_META = {
 }
 
 
-# ── Google Sheets service ─────────────────────────────────────────────────────
-
-def get_service():
-    creds = Credentials.from_service_account_file(str(get_creds_path()), scopes=SCOPES)
-    return build("sheets", "v4", credentials=creds)
-
-
 # ── Tab management ────────────────────────────────────────────────────────────
 
-def get_sheet_id_map(service) -> dict[str, int]:
-    meta = googleapi_retry(service.spreadsheets().get(spreadsheetId=DB_VIEW_SHEET_ID).execute)
-    return {s["properties"]["title"]: s["properties"]["sheetId"]
-            for s in meta["sheets"]}
+def get_sheet_id_map(ss) -> dict[str, int]:
+    return {ws.title: ws.id for ws in gsheets_retry(ss.worksheets)}
 
 
-def ensure_tabs(service):
-    existing  = get_sheet_id_map(service)
-    requests  = []
+def ensure_tabs(ss):
+    existing = {ws.title: ws for ws in gsheets_retry(ss.worksheets)}
     for name in TABS:
         if name not in existing:
-            requests.append({"addSheet": {"properties": {"title": name}}})
+            gsheets_retry(ss.add_worksheet, title=name, rows=1000, cols=26)
     if "Sheet1" in existing:
-        requests.append({"deleteSheet": {"sheetId": existing["Sheet1"]}})
-    if requests:
-        googleapi_retry(
-            service.spreadsheets().batchUpdate(
-                spreadsheetId=DB_VIEW_SHEET_ID,
-                body={"requests": requests},
-            ).execute
-        )
-        log.info("Tabs updated.")
+        gsheets_retry(ss.del_worksheet, existing["Sheet1"])
+    log.info("Tabs verified.")
 
 
 # ── Value cleaning ────────────────────────────────────────────────────────────
 
 def _parse_dt(v: str) -> datetime | None:
-    """Try to parse a string as datetime. Returns datetime or None."""
     if not v:
         return None
     for fmt in [
@@ -141,7 +110,6 @@ def _parse_dt(v: str) -> datetime | None:
 
 
 def _clean_date(v) -> str:
-    """Format as DD-MMM-YYYY."""
     if v is None:
         return ""
     if isinstance(v, (datetime, date)):
@@ -154,7 +122,6 @@ def _clean_date(v) -> str:
 
 
 def _clean_ts(v) -> str:
-    """Format as DD-MMM-YYYY HH:MM:SS."""
     if v is None:
         return ""
     if isinstance(v, datetime):
@@ -167,7 +134,6 @@ def _clean_ts(v) -> str:
 
 
 def _clean_value(v) -> str | int | float:
-    """Generic clean — preserves int/float, passes strings through."""
     if v is None:
         return ""
     if isinstance(v, bool):
@@ -238,28 +204,25 @@ def load_corporate_actions() -> tuple[list, list]:
 
 # ── Sheet writer ──────────────────────────────────────────────────────────────
 
-def write_tab(service, tab: str, headers: list, rows: list):
-    """Clears tab, writes headers + cleaned rows, then formats columns."""
-    sheet_id_map = get_sheet_id_map(service)
-    sheet_id     = sheet_id_map.get(tab)
-    meta         = TAB_META.get(tab, {})
+def write_tab(ss, tab: str, headers: list, rows: list):
+    ws       = ss.worksheet(tab)
+    sheet_id = ws.id
+    meta     = TAB_META.get(tab, {})
 
-    real_cols  = meta.get("real_cols", [])
-    int_cols   = meta.get("int_cols",  [])
-    date_cols  = meta.get("date_cols", [])
-    ts_cols    = meta.get("ts_cols",   [])
+    real_cols = meta.get("real_cols", [])
+    int_cols  = meta.get("int_cols",  [])
+    date_cols = meta.get("date_cols", [])
+    ts_cols   = meta.get("ts_cols",   [])
 
-    # Resolve column names to 0-based indices
-    def _idx(col_names: list[str]) -> list[int]:
+    def _idx(col_names):
         return [headers.index(c) for c in col_names if c in headers]
 
-    real_idx  = _idx(real_cols)
-    int_idx   = _idx(int_cols)
-    date_idx  = _idx(date_cols)
-    ts_idx    = _idx(ts_cols)
+    real_idx = _idx(real_cols)
+    int_idx  = _idx(int_cols)
+    date_idx = _idx(date_cols)
+    ts_idx   = _idx(ts_cols)
 
-    # Clean each row — apply correct formatter per column
-    def _clean_row(row: list) -> list:
+    def _clean_row(row):
         result = []
         for i, v in enumerate(row):
             if i in date_idx:
@@ -272,30 +235,16 @@ def write_tab(service, tab: str, headers: list, rows: list):
 
     cleaned = [headers] + [_clean_row(r) for r in rows]
 
-    # Write data
-    googleapi_retry(
-        service.spreadsheets().values().clear(
-            spreadsheetId=DB_VIEW_SHEET_ID,
-            range=f"{tab}!A1",
-        ).execute
-    )
-    googleapi_retry(
-        service.spreadsheets().values().update(
-            spreadsheetId=DB_VIEW_SHEET_ID,
-            range=f"{tab}!A1",
-            valueInputOption="USER_ENTERED",
-            body={"values": cleaned},
-        ).execute
-    )
+    gsheets_retry(ws.clear)
+    gsheets_retry(ws.update, cleaned, "A1", value_input_option="USER_ENTERED")
 
-    if not sheet_id or not rows:
+    if not rows:
         log.info(f"✅ {tab}: {len(rows)} rows written.")
         return
 
     num_rows     = len(rows) + 1
     fmt_requests = []
 
-    # Float columns → #,##0.00
     for col_idx in real_idx:
         fmt_requests.append({"repeatCell": {
             "range": {"sheetId": sheet_id, "startRowIndex": 1,
@@ -306,7 +255,6 @@ def write_tab(service, tab: str, headers: list, rows: list):
             "fields": "userEnteredFormat.numberFormat",
         }})
 
-    # Date columns → DD-MMM-YYYY
     for col_idx in date_idx:
         fmt_requests.append({"repeatCell": {
             "range": {"sheetId": sheet_id, "startRowIndex": 1,
@@ -317,7 +265,6 @@ def write_tab(service, tab: str, headers: list, rows: list):
             "fields": "userEnteredFormat.numberFormat",
         }})
 
-    # Timestamp columns → DD-MMM-YYYY HH:MM:SS
     for col_idx in ts_idx:
         fmt_requests.append({"repeatCell": {
             "range": {"sheetId": sheet_id, "startRowIndex": 1,
@@ -329,7 +276,6 @@ def write_tab(service, tab: str, headers: list, rows: list):
             "fields": "userEnteredFormat.numberFormat",
         }})
 
-    # Bold header row with dark background
     fmt_requests.append({"repeatCell": {
         "range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1},
         "cell": {"userEnteredFormat": {
@@ -341,12 +287,7 @@ def write_tab(service, tab: str, headers: list, rows: list):
     }})
 
     if fmt_requests:
-        googleapi_retry(
-            service.spreadsheets().batchUpdate(
-                spreadsheetId=DB_VIEW_SHEET_ID,
-                body={"requests": fmt_requests},
-            ).execute
-        )
+        gsheets_retry(ss.batch_update, {"requests": fmt_requests})
 
     log.info(f"✅ {tab}: {len(rows)} rows written and formatted.")
 
@@ -378,11 +319,12 @@ def main():
                 print(f"  ... {len(rows) - 3} more rows")
         return
 
-    service = get_service()
-    ensure_tabs(service)
+    gc = get_gsheet_client()
+    ss = gc.open_by_key(DB_VIEW_SHEET_ID)
+    ensure_tabs(ss)
 
     for tab, (headers, rows) in data.items():
-        write_tab(service, tab, headers, rows)
+        write_tab(ss, tab, headers, rows)
 
     log.info(f"\n✅ DB_VIEW push complete.")
     log.info(f"   https://docs.google.com/spreadsheets/d/{DB_VIEW_SHEET_ID}")

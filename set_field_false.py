@@ -1,9 +1,6 @@
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
 import logging
 
-from runtime_paths import get_creds_path
-from google_sheets_utils import googleapi_retry
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -11,30 +8,15 @@ from script_logger import log_start, log_end
 
 _RUN_CTX = log_start("set_field_false")
 atexit.register(log_end, _RUN_CTX)
-# Path to your service account JSON file
-SERVICE_ACCOUNT_FILE = str(get_creds_path())
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
-
 REF_SHEETS = "PORTFOLIO"
 SHEET_NAME = "ALL_OLD_GTTs"
 CELL = "R1"
 
 def main():
-    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-    service = build("sheets", "v4", credentials=creds)
-
-    body = {
-        "values": [["FALSE"]]
-    }
-
+    gc = get_gsheet_client()
     spreadsheet_id = resolve_sheet_id(REF_SHEETS)
-    _req = service.spreadsheets().values().update(
-        spreadsheetId=spreadsheet_id,
-        range=f"{SHEET_NAME}!{CELL}",
-        valueInputOption="USER_ENTERED",
-        body=body
-    )
-    result = googleapi_retry(_req.execute)
+    ws = gc.open_by_key(spreadsheet_id).worksheet(SHEET_NAME)
+    gsheets_retry(ws.update, [["FALSE"]], f"{CELL}")
 
     print(f"Updated {CELL} in {SHEET_NAME} to FALSE")
 
