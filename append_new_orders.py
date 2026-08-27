@@ -1,9 +1,6 @@
-import gspread
-from google.oauth2.service_account import Credentials
 import logging
 
-from runtime_paths import get_creds_path
-from google_sheets_utils import gsheets_retry
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -11,21 +8,13 @@ from script_logger import log_start, log_end
 
 _RUN_CTX = log_start("append_new_orders")
 atexit.register(log_end, _RUN_CTX)
-CREDS_PATH = str(get_creds_path())
 ref_sheets = "PORTFOLIO"
 tab_name_src = "LATEST_ORDERS"
 tab_name_dest = "NEW_ORDERS"
 SRC_RANGE = "A:H"  # covers columns A to H
 
 def main():
-    creds = Credentials.from_service_account_file(
-        CREDS_PATH,
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
-    )
-    gc = gspread.authorize(creds)
+    gc = get_gsheet_client()
 
     sheet_id = resolve_sheet_id(ref_sheets)
 

@@ -11,18 +11,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from kite_session import get_kite
 
-import gspread
-from google.oauth2.service_account import Credentials
 
-from runtime_paths import get_creds_path, repo_root
-from google_sheets_utils import gsheets_retry
+from runtime_paths import repo_root
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "db"))
 from db import get_conn, init_db, update_meta
 from git_utils import commit_file_if_changed
 
-CREDS_PATH = str(get_creds_path())
 ref_sheets = "PORTFOLIO"
 sheet_id = resolve_sheet_id(ref_sheets)
 tab_name_holdings = "ZERODHA_PORTFOLIO"
@@ -30,13 +27,6 @@ tab_name_portfolio = "Portfolio"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
-def get_gsheet_client():
-    scopes = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scopes)
-    return gspread.authorize(creds)
 
 def fetch_holdings():
     kite = get_kite()

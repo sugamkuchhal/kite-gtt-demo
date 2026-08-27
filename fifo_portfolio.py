@@ -1,11 +1,9 @@
 import pandas as pd
 from datetime import datetime
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
 
-from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
-from google_sheets_utils import gsheets_retry
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 
 import atexit
 from script_logger import log_start, log_end
@@ -15,15 +13,12 @@ atexit.register(log_end, _RUN_CTX)
 # --- CONFIG ---
 ref_sheets = "PORTFOLIO"
 tab_name = "ALL_ORDERS"
-CREDENTIALS_FILE = str(get_creds_path())
 
 import logging
 
 def main():
     # --- STEP 1: DOWNLOAD DATA FROM GOOGLE SHEETS ---
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
-    client = gspread.authorize(creds)
+    client = get_gsheet_client()
 
     sheet_id = resolve_sheet_id(ref_sheets)
     sheet = client.open_by_key(sheet_id)

@@ -5,15 +5,14 @@ _RUN_CTX = log_start("zerodha_tick_size")
 atexit.register(log_end, _RUN_CTX)
 # zerodha_tick_size_no_notfound.py
 import importlib.util
-import gspread
-from google_sheets_utils import gsheets_retry
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from kiteconnect import KiteConnect
 import sys
 import logging
 
 
 
-from runtime_paths import get_api_key_path, get_creds_path
+from runtime_paths import get_api_key_path
 from ref_sheets_utils import resolve_sheet_id
 
 GSPREAD_FORMATTING_AVAILABLE = importlib.util.find_spec("gspread_formatting") is not None
@@ -25,7 +24,6 @@ else:
     NumberFormat = None
 
 API_KEY_FILE = get_api_key_path()
-CREDS_JSON_PATH = str(get_creds_path())
 REF_SHEETS = "TICKER"
 TICKERS_SHEET_NAME = "TICKERS_TICK_SIZE"
 ZERODHA_SHEET_NAME = "ZERODHA_TICKERS"
@@ -58,7 +56,7 @@ def main():
     print(f"Loaded {len(instrument_map)} instruments.")
 
     # ----------------------- open sheet (single) -----------------------
-    gc = gspread.service_account(filename=CREDS_JSON_PATH)
+    gc = get_gsheet_client()
     sheet_id = resolve_sheet_id(REF_SHEETS)
     ss = gc.open_by_key(sheet_id)
     tick_sheet = ss.worksheet(TICKERS_SHEET_NAME)
