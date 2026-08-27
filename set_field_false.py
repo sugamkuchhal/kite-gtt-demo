@@ -3,6 +3,7 @@ from googleapiclient.discovery import build
 import logging
 
 from runtime_paths import get_creds_path
+from google_sheets_utils import googleapi_retry
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -27,12 +28,13 @@ def main():
     }
 
     spreadsheet_id = resolve_sheet_id(REF_SHEETS)
-    result = service.spreadsheets().values().update(
+    _req = service.spreadsheets().values().update(
         spreadsheetId=spreadsheet_id,
         range=f"{SHEET_NAME}!{CELL}",
         valueInputOption="USER_ENTERED",
         body=body
-    ).execute()
+    )
+    result = googleapi_retry(_req.execute)
 
     print(f"Updated {CELL} in {SHEET_NAME} to FALSE")
 
