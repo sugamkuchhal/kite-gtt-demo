@@ -31,6 +31,7 @@ sys.path.insert(0, str(_REPO_ROOT / "db"))
 from db import get_conn, init_db
 from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
+from google_sheets_utils import googleapi_retry
 
 DB_VIEW_SHEET_ID = resolve_sheet_id("DB_VIEW")
 TABS             = ["HOLDINGS", "GTTS", "ORDERS", "MARKET_DATA", "CORP_ACTIONS"]
@@ -94,7 +95,7 @@ def get_service():
 # ── Tab management ────────────────────────────────────────────────────────────
 
 def get_sheet_id_map(service) -> dict[str, int]:
-    meta = service.spreadsheets().get(spreadsheetId=DB_VIEW_SHEET_ID).execute()
+    meta = googleapi_retry(service.spreadsheets().get(spreadsheetId=DB_VIEW_SHEET_ID).execute)
     return {s["properties"]["title"]: s["properties"]["sheetId"]
             for s in meta["sheets"]}
 
@@ -108,10 +109,12 @@ def ensure_tabs(service):
     if "Sheet1" in existing:
         requests.append({"deleteSheet": {"sheetId": existing["Sheet1"]}})
     if requests:
-        service.spreadsheets().batchUpdate(
-            spreadsheetId=DB_VIEW_SHEET_ID,
-            body={"requests": requests},
-        ).execute()
+        googleapi_retry(
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=DB_VIEW_SHEET_ID,
+                body={"requests": requests},
+            ).execute
+        )
         log.info("Tabs updated.")
 
 
@@ -270,16 +273,20 @@ def write_tab(service, tab: str, headers: list, rows: list):
     cleaned = [headers] + [_clean_row(r) for r in rows]
 
     # Write data
-    service.spreadsheets().values().clear(
-        spreadsheetId=DB_VIEW_SHEET_ID,
-        range=f"{tab}!A1",
-    ).execute()
-    service.spreadsheets().values().update(
-        spreadsheetId=DB_VIEW_SHEET_ID,
-        range=f"{tab}!A1",
-        valueInputOption="USER_ENTERED",
-        body={"values": cleaned},
-    ).execute()
+    googleapi_retry(
+        service.spreadsheets().values().clear(
+            spreadsheetId=DB_VIEW_SHEET_ID,
+            range=f"{tab}!A1",
+        ).execute
+    )
+    googleapi_retry(
+        service.spreadsheets().values().update(
+            spreadsheetId=DB_VIEW_SHEET_ID,
+            range=f"{tab}!A1",
+            valueInputOption="USER_ENTERED",
+            body={"values": cleaned},
+        ).execute
+    )
 
     if not sheet_id or not rows:
         log.info(f"✅ {tab}: {len(rows)} rows written.")
@@ -334,10 +341,12 @@ def write_tab(service, tab: str, headers: list, rows: list):
     }})
 
     if fmt_requests:
-        service.spreadsheets().batchUpdate(
-            spreadsheetId=DB_VIEW_SHEET_ID,
-            body={"requests": fmt_requests},
-        ).execute()
+        googleapi_retry(
+            service.spreadsheets().batchUpdate(
+                spreadsheetId=DB_VIEW_SHEET_ID,
+                body={"requests": fmt_requests},
+            ).execute
+        )
 
     log.info(f"✅ {tab}: {len(rows)} rows written and formatted.")
 
