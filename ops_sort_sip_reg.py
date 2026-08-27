@@ -1,10 +1,7 @@
-import gspread
 import argparse
 import time
 import logging
-from google.oauth2.service_account import Credentials
-
-from runtime_paths import get_creds_path
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -12,18 +9,14 @@ from script_logger import log_start, log_end
 
 _RUN_CTX = log_start("ops_sort_sip_reg")
 atexit.register(log_end, _RUN_CTX)
-CREDS_PATH = str(get_creds_path())
-
 def load_sheet(ref_sheets):
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scope)
-    client = gspread.authorize(creds)
+    client = get_gsheet_client()
     sheet_id = resolve_sheet_id(ref_sheets)
     return client.open_by_key(sheet_id)
 
 def central_buy_update(action_sheet, special_target_sheet, filter_col_letter="O", dest_col_letter="I", uncheck=False):
-    special_target_sheet.batch_clear([f"{dest_col_letter}2:{dest_col_letter}"])
-    action_data = action_sheet.get_all_values()
+    gsheets_retry(special_target_sheet.batch_clear, [f"{dest_col_letter}2:{dest_col_letter}"])
+    action_data = gsheets_retry(action_sheet.get_all_values)
     if len(action_data) < 2:
         print("⚠️ No data in Action_List.")
         return
@@ -44,7 +37,7 @@ def central_buy_update(action_sheet, special_target_sheet, filter_col_letter="O"
 
     if filtered_rows:
         target_range = f"{dest_col_letter}2:{dest_col_letter}{len(filtered_rows)+1}"
-        special_target_sheet.batch_update(
+        gsheets_retry(special_target_sheet.batch_update,
             [{"range": target_range, "values": filtered_rows}],
             value_input_option='USER_ENTERED'
         )
@@ -69,8 +62,8 @@ def mkt_kwk_ops_sort(
     # --- TOUCH A CELL IN EACH WORKSHEET TO FORCE RECALC ---
     for ws, name in [(action_sheet, "Action_List"), (special_target_sheet, "Special_Target")]:
         try:
-            val = ws.acell("A1").value
-            ws.update_acell("A1", val)
+            val = gsheets_retry(ws.acell, "A1").value
+            gsheets_retry(ws.update_acell, "A1", val)
             print(f"TOUCH: Triggered formula recalc for {name} Sheet.")
         except Exception as e:
             print(f"TOUCH: Could not touch A1 in {name} Sheet: {e}")

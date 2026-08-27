@@ -20,10 +20,8 @@ Can be run standalone (manual use) or imported by the mailer.
 
 import logging
 
-import gspread
-from google.oauth2.service_account import Credentials
 
-from runtime_paths import get_creds_path
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 # ==========================
@@ -33,16 +31,13 @@ DELISTED_REF  = "PORTFOLIO"
 DELISTED_TAB  = "DELISTED"
 SIGNAL_CELL   = "A1"
 
-SERVICE_CREDS = str(get_creds_path())
 
 # ==========================
 # Core logic
 # ==========================
 
 def get_client():
-    scope = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_file(SERVICE_CREDS, scopes=scope)
-    return gspread.authorize(creds)
+    return get_gsheet_client()
 
 
 def run_delisted():
@@ -89,7 +84,7 @@ def run_delisted():
 
     try:
         # Write tickers to col C
-        ws.update(
+        gsheets_retry(ws.update,
             range_name=f"C{paste_start}:C{paste_end}",
             values=[[t] for t in tickers],
             value_input_option="RAW",
@@ -97,7 +92,7 @@ def run_delisted():
         logging.info("DELISTED: pasted %d ticker(s) into C%d:C%d.", len(tickers), paste_start, paste_end)
 
         # Clear A2:A{last_a}
-        ws.batch_clear([f"A2:A{last_a}"])
+        gsheets_retry(ws.batch_clear, [f"A2:A{last_a}"])
         logging.info("DELISTED: cleared A2:A%d — A1 will recalculate to 0.", last_a)
 
         result["moved"]       = tickers

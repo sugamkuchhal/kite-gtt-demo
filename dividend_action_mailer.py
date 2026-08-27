@@ -36,10 +36,9 @@ import smtplib
 from html import escape as _esc
 
 import requests
-import gspread
-from google.oauth2.service_account import Credentials
 
-from runtime_paths import (get_creds_path, get_smtp_token_path,
+from google_sheets_utils import get_gsheet_client, gsheets_retry
+from runtime_paths import (get_smtp_token_path,
                            get_telegram_token_path, repo_root,
                            SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT, TELEGRAM_CHAT_ID)
 from ref_sheets_utils import resolve_sheet_id
@@ -51,7 +50,6 @@ _RUN_CTX = log_start("dividend_action_mailer")
 atexit.register(log_end, _RUN_CTX)
 
 SMTP_TOKEN_FILE = str(get_smtp_token_path())
-SERVICE_CREDS = str(get_creds_path())
 
 # ==========================
 # Config (constants)
@@ -216,7 +214,7 @@ def read_holdings(sheet_id):
     """
     client = _gs_client()
     ws = client.open_by_key(sheet_id).worksheet(HOLDINGS_TAB)
-    rows = ws.get_all_values()
+    rows = gsheets_retry(ws.get_all_values)
     holdings = {}
     for row in rows[1:]:  # skip header
         symbol = normalize_symbol(row[0]) if len(row) > 0 else ""
@@ -378,7 +376,7 @@ def append_to_ledger(sheet_id, entries, locked_date):
     existing = ws.get_all_values()
 
     if not existing:
-        ws.update(values=[LEDGER_HEADERS], range_name="A1")
+        gsheets_retry(ws.update, values=[LEDGER_HEADERS], range_name="A1")
         existing = [LEDGER_HEADERS]
         logging.info("Wrote headers to empty %s tab.", LEDGER_TAB)
 
@@ -407,7 +405,7 @@ def append_to_ledger(sheet_id, entries, locked_date):
         ])
 
     if new_rows:
-        ws.append_rows(new_rows, value_input_option="USER_ENTERED")
+        gsheets_retry(ws.append_rows, new_rows, value_input_option="USER_ENTERED")
     logging.info("Ledger: appended %d row(s), skipped %d duplicate(s).",
                  len(new_rows), skipped)
     return len(new_rows), skipped

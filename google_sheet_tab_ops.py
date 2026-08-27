@@ -109,7 +109,7 @@ def resolve_columns(sheet, columns: Sequence[str], header_row: int) -> list[Colu
     if not columns:
         return []
 
-    headers = [str(header).strip() for header in sheet.row_values(header_row)]
+    headers = [str(header).strip() for header in gsheets_retry(sheet.row_values, header_row)]
     resolved: list[ColumnRef] = []
 
     for raw_col in columns:
@@ -138,7 +138,7 @@ def resolve_columns(sheet, columns: Sequence[str], header_row: int) -> list[Colu
 
 def detect_last_non_empty_row_in_column(sheet, column: ColumnRef) -> int:
     """Return the last row number containing any value in one column."""
-    values = sheet.col_values(column.index)
+    values = gsheets_retry(sheet.col_values, column.index)
     for offset, cell in enumerate(reversed(values)):
         if str(cell).strip():
             return len(values) - offset
@@ -209,7 +209,7 @@ def fill_formulas_down(
             )
 
     if requests:
-        spreadsheet.batch_update({"requests": requests})
+        gsheets_retry(spreadsheet.batch_update, {"requests": requests})
 
     return results
 
@@ -244,7 +244,7 @@ def hard_copy_values(
         destination_end_row = end_row + 1
         source_range = f"{col.letter}{start_row}:{col.letter}{end_row}"
         destination_range = f"{col.letter}{destination_start_row}:{col.letter}{destination_end_row}"
-        values = sheet.get(source_range, value_render_option="UNFORMATTED_VALUE")
+        values = gsheets_retry(sheet.get, source_range, value_render_option="UNFORMATTED_VALUE")
         expected_rows = end_row - start_row + 1
         padded_values = [row[:1] if row else [""] for row in values]
         padded_values.extend([[""] for _ in range(expected_rows - len(padded_values))])
@@ -262,9 +262,9 @@ def hard_copy_values(
         results.append(RowCopyResult(col, start_row, end_row, destination_start_row, destination_end_row))
 
     if updates:
-        sheet.batch_update(updates, value_input_option="RAW")
+        gsheets_retry(sheet.batch_update, updates, value_input_option="RAW")
     if format_requests:
-        spreadsheet.batch_update({"requests": format_requests})
+        gsheets_retry(spreadsheet.batch_update, {"requests": format_requests})
 
     return results
 
@@ -302,7 +302,7 @@ def copy_row_format(
             "pasteOrientation": "NORMAL",
         }
     }
-    spreadsheet.batch_update({"requests": [request]})
+    gsheets_retry(spreadsheet.batch_update, {"requests": [request]})
     return source_row, destination_row, start_col, effective_end_col
 
 def get_date_update_value(value: str | None) -> str:
@@ -315,7 +315,7 @@ def set_cell_value(sheet, cell: str | None, value: str | None) -> str | None:
     if not cell:
         return None
     update_value = get_date_update_value(value)
-    sheet.update(cell, [[update_value]], value_input_option="USER_ENTERED")
+    gsheets_retry(sheet.update, cell, [[update_value]], value_input_option="USER_ENTERED")
     return update_value
 
 
@@ -328,6 +328,7 @@ def resolve_spreadsheet_id(sheet_id_or_ref: str) -> str:
     open them directly and report any access/not-found errors.
     """
     from ref_sheets_utils import resolve_sheet_id
+from google_sheets_utils import gsheets_retry
 
     try:
         return resolve_sheet_id(sheet_id_or_ref)
@@ -337,12 +338,8 @@ def resolve_spreadsheet_id(sheet_id_or_ref: str) -> str:
 
 def get_service_account_email() -> str:
     """Return the service-account email used for authentication."""
-    from oauth2client.service_account import ServiceAccountCredentials
-
-    from runtime_paths import get_creds_path
-
-    credentials = ServiceAccountCredentials.from_json_keyfile_name(str(get_creds_path()), SHEETS_SCOPE)
-    return credentials.service_account_email
+        gc = get_gsheet_client()
+    return gc.auth.service_account_email
 
 
 def format_sheet_target(sheet_id_or_ref: str, spreadsheet_id: str) -> str:
@@ -596,8 +593,7 @@ def main() -> None:
     needs_row_operation = bool(formula_columns or hard_copy_columns)
     needs_row_format_copy = args.format_source_row is not None and args.format_destination_row is not None
 
-    from google_sheets_utils import get_gsheet_client
-
+    
     client = get_gsheet_client()
     spreadsheet_id = resolve_spreadsheet_id(args.sheet_id)
     if spreadsheet_id != args.sheet_id:

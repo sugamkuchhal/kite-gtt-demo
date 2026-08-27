@@ -39,13 +39,12 @@ Can be run standalone (manual use) or imported by the mailer.
 import logging
 from pathlib import Path
 
-import gspread
-from google.oauth2.service_account import Credentials
 
 import subprocess
 import time
 
-from runtime_paths import get_creds_path, repo_root
+from runtime_paths import repo_root
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 from git_utils import commit_file_if_changed
 
@@ -77,16 +76,13 @@ TICKER_COL       = 0   # column A (0-indexed)
 TICK_SIZE_SCRIPT = "zerodha_tick_size.py"
 TICK_SIZE_RECALC_WAIT = 15   # seconds to wait for formula recalc after deletion
 
-SERVICE_CREDS = str(get_creds_path())
 
 # ==========================
 # Core logic
 # ==========================
 
 def get_client():
-    scope = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_file(SERVICE_CREDS, scopes=scope)
-    return gspread.authorize(creds)
+    return get_gsheet_client()
 
 
 def read_master_live_tickers(client):
@@ -133,12 +129,12 @@ def purge_feed_tab(client, sheet_id, tab_name, remove_set):
     purged = old_len - len(keep_rows)
     if purged > 0:
         if keep_rows:
-            ws.update(
+            gsheets_retry(ws.update,
                 f"A2:C{len(keep_rows) + 1}",
                 keep_rows,
                 value_input_option="RAW",
             )
-        ws.batch_clear([f"A{len(keep_rows) + 2}:C{old_len + 1}"])
+        gsheets_retry(ws.batch_clear, [f"A{len(keep_rows) + 2}:C{old_len + 1}"])
         logging.info(
             "[%s] purged %d row(s) (%s); %d row(s) remain.",
             tab_name, purged, ", ".join(sorted(found)), len(keep_rows),
@@ -249,7 +245,7 @@ def purge_ticker_data_tab(client, sheet_id, tab_name, remove_set):
     Returns a result dict for reporting.
     """
     ws = client.open_by_key(sheet_id).worksheet(tab_name)
-    all_values = ws.get_all_values()
+    all_values = gsheets_retry(ws.get_all_values)
     if not all_values:
         return {"tab": tab_name, "purged": 0, "purged_tickers": [], "not_found": sorted(remove_set), "error": None}
 
@@ -273,12 +269,12 @@ def purge_ticker_data_tab(client, sheet_id, tab_name, remove_set):
 
     if purged > 0:
         if keep_rows:
-            ws.update(
+            gsheets_retry(ws.update,
                 f"A2:{chr(64 + num_cols)}{len(keep_rows) + 1}",
                 keep_rows,
                 value_input_option="RAW",
             )
-        ws.batch_clear([f"A{len(keep_rows) + 2}:{chr(64 + num_cols)}{old_len + 1}"])
+        gsheets_retry(ws.batch_clear, [f"A{len(keep_rows) + 2}:{chr(64 + num_cols)}{old_len + 1}"])
         logging.info(
             "[%s] purged %d row(s) (%s); %d row(s) remain.",
             tab_name, purged, ", ".join(sorted(found)), len(keep_rows),
