@@ -34,7 +34,7 @@ def _is_retriable(e: Exception) -> bool:
         code = int(getattr(e, "response", None) and e.response.status_code or 0)
     except Exception:
         code = 0
-    return code in (429, 500, 502, 503, 504)
+    return code in (429, 500, 502, 503, 504) or code <= 0
 
 def _call_with_retries(fn, *args, **kwargs):
     attempts = int(os.getenv("GSHEETS_MAX_RETRIES", "6"))
@@ -49,6 +49,9 @@ def _call_with_retries(fn, *args, **kwargs):
             # exponential backoff with jitter
             sleep_s = (base * (2 ** i)) + random.uniform(0, 0.2)
             time.sleep(sleep_s)
+
+# Public alias for use in other modules
+gsheets_retry = _call_with_retries
 
 # ---- Auth unchanged ----
 def get_gsheet_client():

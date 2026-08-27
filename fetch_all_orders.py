@@ -3,7 +3,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from kite_session import get_kite
-from google_sheets_utils import get_gsheet_client
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "db"))
@@ -66,13 +66,13 @@ def fetch_all_orders():
 
         values = [headers] + formatted
         
-        sheet.clear()
-        sheet.update(values=values, range_name="A1")
+        gsheets_retry(sheet.clear)
+        gsheets_retry(sheet.update, values=values, range_name="A1")
         logging.info(f"✅ {len(formatted)} orders written to sheet: {tab_name_orders}")
 
         # ---- Post Check: LATEST_ORDERS!I1 ----
         latest_orders_sheet = client.open_by_key(sheet_id).worksheet(tab_name_latest_orders)
-        check_value = latest_orders_sheet.acell("I1").value
+        check_value = gsheets_retry(latest_orders_sheet.acell, "I1").value
 
         if check_value == "0":
             logging.info("✅ Post-check passed: LATEST_ORDERS!I1 = 0 → Process completed successfully")

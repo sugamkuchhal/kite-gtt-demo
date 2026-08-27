@@ -15,6 +15,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 from runtime_paths import get_creds_path, repo_root
+from google_sheets_utils import gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "db"))
@@ -76,8 +77,8 @@ def write_to_gsheet(holdings):
     ws = sh.worksheet(tab_name_holdings)
 
     # Clear existing content and update with new data
-    ws.clear()
-    ws.update(values=data, range_name='A1')
+    gsheets_retry(ws.clear)
+    gsheets_retry(ws.update, values=data, range_name='A1')
     logging.info(f"✅ Holdings written to {ref_sheets} [{tab_name_holdings}]")
 
 def check_portfolio_discrepancy():
@@ -87,8 +88,8 @@ def check_portfolio_discrepancy():
     sh = gc.open_by_key(sheet_id)
     ws = sh.worksheet(tab_name_portfolio)
     try:
-        cell_value = ws.acell(CELL).value
-        cell_check_value = ws.acell(CELL_CHECK).value
+        cell_value = gsheets_retry(ws.acell, CELL).value
+        cell_check_value = gsheets_retry(ws.acell, CELL_CHECK).value
         if str(cell_value).strip() == "0":
             logging.info("✅ All Good. Portfolio Matched Completely.")
         else:

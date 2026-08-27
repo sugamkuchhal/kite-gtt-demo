@@ -3,6 +3,7 @@ from google.oauth2.service_account import Credentials
 import logging
 
 from runtime_paths import get_creds_path
+from google_sheets_utils import gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -34,7 +35,7 @@ def main():
     ws_dest = sh.worksheet(tab_name_dest)
 
     # Fetch all values from source (A:H)
-    src_data = ws_src.get(SRC_RANGE)
+    src_data = gsheets_retry(ws_src.get, SRC_RANGE)
     if not src_data or len(src_data) <= 1:
         print("No data to copy from source (or only header present).")
         return
@@ -43,7 +44,7 @@ def main():
     data_rows = src_data[1:]
 
     # Append all non-header rows to the destination in one call.
-    ws_dest.append_rows(data_rows, value_input_option="USER_ENTERED")
+    gsheets_retry(ws_dest.append_rows, data_rows, value_input_option="USER_ENTERED")
     print(f"✅ Appended {len(data_rows)} rows from {tab_name_src} to {tab_name_dest}.")
 
 def run_cli():

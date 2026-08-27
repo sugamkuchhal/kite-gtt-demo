@@ -5,26 +5,13 @@ _RUN_CTX = log_start("zerodha_tick_size")
 atexit.register(log_end, _RUN_CTX)
 # zerodha_tick_size_no_notfound.py
 import importlib.util
-import time
 import gspread
+from google_sheets_utils import gsheets_retry
 from kiteconnect import KiteConnect
 import sys
 import logging
 
 
-def with_retry(fn, *args, max_attempts=3, backoff=30, **kwargs):
-    """Retry a gspread call on transient APIError (5xx / unparseable HTML)."""
-    for attempt in range(1, max_attempts + 1):
-        try:
-            return fn(*args, **kwargs)
-        except gspread.exceptions.APIError as e:
-            if attempt == max_attempts:
-                raise
-            logging.warning(
-                f"gspread transient error (attempt {attempt}/{max_attempts}), "
-                f"retrying in {backoff}s: {e}"
-            )
-            time.sleep(backoff)
 
 from runtime_paths import get_api_key_path, get_creds_path
 from ref_sheets_utils import resolve_sheet_id
@@ -77,7 +64,7 @@ def main():
     tick_sheet = ss.worksheet(TICKERS_SHEET_NAME)
 
     # ----------------------- read column A (detect last non-empty row) -----------------------
-    col_a = with_retry(tick_sheet.col_values, 1)  # returns up to last non-empty in col A
+    col_a = gsheets_retry(tick_sheet.col_values, 1)  # returns up to last non-empty in col A
     if len(col_a) <= 1:
         print("No tickers found in TICKERS_TICK_SIZE!A2:A (column A only has header or is empty). Exiting.")
         return 0
@@ -93,7 +80,7 @@ def main():
     # ----------------------- CLEAR C/D/E RIGHT AT START -----------------------
     clear_range = f"C2:E{write_last_row}"
     print(f"Clearing {clear_range} right at start ...")
-    with_retry(tick_sheet.batch_clear, [clear_range])
+    gsheets_retry(tick_sheet.batch_clear, [clear_range])
 
     # initialize update arrays of length write_data_rows (one inner list per row)
     updates_col_c = [[CLEAR_SENTINEL] for _ in range(write_data_rows)]
@@ -101,8 +88,8 @@ def main():
     updates_col_e = [[CLEAR_SENTINEL] for _ in range(write_data_rows)]
 
     # ----------------------- read embedded Zerodha mapping from TICKERS_TICK_SIZE G:J and build lookup -----------------------
-    i_col = with_retry(tick_sheet.col_values, 9)
-    j_col = with_retry(tick_sheet.col_values, 10)
+    i_col = gsheets_retry(tick_sheet.col_values, 9)
+    j_col = gsheets_retry(tick_sheet.col_values, 10)
 
     # Build lookup: value_in_I -> first value_in_J (strip)
     zerodha_lookup = {}
@@ -177,16 +164,16 @@ def main():
     assert len(updates_col_e) == write_data_rows
 
     print(f"Writing updates to {range_c}, {range_d}, {range_e} ...")
-    with_retry(tick_sheet.update, range_name=range_c, values=updates_col_c)
-    with_retry(tick_sheet.update, range_name=range_d, values=updates_col_d)
-    with_retry(tick_sheet.update, range_name=range_e, values=updates_col_e)
+    gsheets_retry(tick_sheet.update, range_name=range_c, values=updates_col_c)
+    gsheets_retry(tick_sheet.update, range_name=range_d, values=updates_col_d)
+    gsheets_retry(tick_sheet.update, range_name=range_e, values=updates_col_e)
 
     # ----------------------- apply number formatting (2 decimals) to C and E -----------------------
     if GSPREAD_FORMATTING_AVAILABLE:
         fmt_2dec = CellFormat(numberFormat=NumberFormat(type="NUMBER", pattern=NUMBER_PATTERN))
         print("Applying number format 2 decimals to columns C and E...")
-        with_retry(format_cell_range, tick_sheet, range_c, fmt_2dec)
-        with_retry(format_cell_range, tick_sheet, range_e, fmt_2dec)
+        gsheets_retry(format_cell_range, tick_sheet, range_c, fmt_2dec)
+        gsheets_retry(format_cell_range, tick_sheet, range_e, fmt_2dec)
     else:
         print("Skipping number formatting because gspread-formatting is not installed.")
 
