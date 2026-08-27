@@ -38,7 +38,7 @@ def prepare_feed_list(ref_sheets, source_tab, dest_tab):
 
     # STEP 1: Copy rows where Column D starts with "Copy" → append A, B, C to dest
     # Read only A:D starting at row 3 (skip 2 header rows)
-    source_data = _retry_read(source_ws.get, "A3:D", value_render_option="UNFORMATTED_VALUE") or []
+    source_data = gsheets_retry(source_ws.get, "A3:D", value_render_option="UNFORMATTED_VALUE") or []
     copy_rows = [row[:3] for row in source_data if len(row) > 3 and str(row[3]).startswith("Copy")]
 
     if copy_rows:
@@ -52,7 +52,7 @@ def prepare_feed_list(ref_sheets, source_tab, dest_tab):
     print("🔀 Step 2: Sorted destination by Ticker (B), then Timestamp (A).")
 
     # STEP 3: Deduplicate based on Column B (ticker)
-    dest_data = _retry_read(dest_ws.get, "A2:C", value_render_option="UNFORMATTED_VALUE") or []
+    dest_data = gsheets_retry(dest_ws.get, "A2:C", value_render_option="UNFORMATTED_VALUE") or []
     seen = set()
     deduped_rows = []
     for row in dest_data:
@@ -107,7 +107,7 @@ def _post_checks_batch(spreadsheet):
     ]
     try:
         # Correct portable call – no keyword arguments
-        resp = _retry_read(spreadsheet.values_batch_get, ranges)
+        resp = gsheets_retry(spreadsheet.values_batch_get, ranges)
         # resp is a dict with 'valueRanges' aligned with our ranges
         for rng, vr in zip(ranges, resp.get("valueRanges", [])):
             values = vr.get("values", [])
