@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import logging
 
-from runtime_paths import get_creds_path
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 REF_SHEETS = "PORTFOLIO"
@@ -9,16 +9,10 @@ RANGE = "ALL_OLD_GTTs!R1"
 
 def is_trigger_true():
     try:
-        import gspread
-        from google.oauth2.service_account import Credentials
-
-        scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-        creds = Credentials.from_service_account_file(str(get_creds_path()), scopes=scopes)
-        gc = gspread.authorize(creds)
+        gc = get_gsheet_client()
         sheet_id = resolve_sheet_id(REF_SHEETS)
-        sheet = gc.open_by_key(sheet_id)
-        result = sheet.values_get(RANGE, params={"valueRenderOption": "FORMATTED_VALUE"})
-        value = result.get("values", [[""]])[0][0]
+        ws = gc.open_by_key(sheet_id).worksheet("ALL_OLD_GTTs")
+        value = gsheets_retry(ws.acell, "R1").value
 
         return str(value).strip().lower() == "true"
     except Exception:

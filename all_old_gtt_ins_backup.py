@@ -6,7 +6,7 @@ import logging
 
 import gspread
 
-from google_sheets_utils import get_gsheet_client
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 from script_logger import log_end, log_start
 
@@ -35,10 +35,10 @@ def _column_number_to_letter(col_num):
 def _worksheet_or_create(spreadsheet, title, rows, cols):
     """Return an existing worksheet, or create it when missing."""
     try:
-        return spreadsheet.worksheet(title)
+        return gsheets_retry(spreadsheet.worksheet, title)
     except gspread.exceptions.WorksheetNotFound:
         logging.info("Worksheet %s not found. Creating backup worksheet.", title)
-        return spreadsheet.add_worksheet(title=title, rows=rows, cols=cols)
+        return gsheets_retry(spreadsheet.add_worksheet, title=title, rows=rows, cols=cols)
 
 
 def _max_column_count(rows):
@@ -57,7 +57,7 @@ def _ensure_worksheet_size(worksheet, rows, cols):
             target_rows,
             target_cols,
         )
-        worksheet.resize(rows=target_rows, cols=target_cols)
+        gsheets_retry(worksheet.resize, rows=target_rows, cols=target_cols)
 
 
 def backup_all_old_gtt_ins(ref_sheets=REF_SHEETS, source_tab=SOURCE_TAB, backup_tab=BACKUP_TAB):
@@ -75,8 +75,8 @@ def backup_all_old_gtt_ins(ref_sheets=REF_SHEETS, source_tab=SOURCE_TAB, backup_
     client = get_gsheet_client()
     spreadsheet = client.open_by_key(sheet_id)
 
-    source_ws = spreadsheet.worksheet(source_tab)
-    source_values = source_ws.get_all_values(value_render_option="UNFORMATTED_VALUE")
+    source_ws = gsheets_retry(spreadsheet.worksheet, source_tab)
+    source_values = gsheets_retry(source_ws.get_all_values, value_render_option="UNFORMATTED_VALUE")
     data_row_count = max(len(source_values) - HEADER_ROW, 0)
     source_col_count = _max_column_count(source_values)
 
@@ -94,7 +94,7 @@ def backup_all_old_gtt_ins(ref_sheets=REF_SHEETS, source_tab=SOURCE_TAB, backup_
     clear_range = f"A{DATA_START_ROW}:{clear_end_col}{backup_ws.row_count}"
 
     logging.info("Clearing %s!%s", backup_tab, clear_range)
-    backup_ws.batch_clear([clear_range])
+    gsheets_retry(backup_ws.batch_clear, [clear_range])
 
     if data_row_count:
         logging.info(
@@ -117,7 +117,7 @@ def backup_all_old_gtt_ins(ref_sheets=REF_SHEETS, source_tab=SOURCE_TAB, backup_
             "startColumnIndex": 0,
             "endColumnIndex": source_col_count,
         }
-        spreadsheet.batch_update(
+        gsheets_retry(spreadsheet.batch_update,
             {
                 "requests": [
                     {
