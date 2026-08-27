@@ -1,9 +1,7 @@
-import gspread
-from google.oauth2.service_account import Credentials
 import argparse
 import time
 
-from runtime_paths import get_creds_path
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -11,38 +9,8 @@ from script_logger import log_start, log_end
 
 _RUN_CTX = log_start("prepare_feed_list")
 atexit.register(log_end, _RUN_CTX)
-CREDS_PATH = str(get_creds_path())
-
-# --- tiny retry helper (exponential backoff) for 429s on READ ops only ---
-def _retry_read(fn, *args, max_tries=5, **kwargs):
-    """
-    Run a gspread READ call with exponential backoff on 429s.
-    Does not affect write operations or logic.
-    """
-    delay = 1.0
-    for attempt in range(1, max_tries + 1):
-        try:
-            return fn(*args, **kwargs)
-        except gspread.exceptions.APIError as e:
-            if "429" in str(e):
-                if attempt == max_tries:
-                    raise
-                print(f"⚠️  Hit 429 on {getattr(fn, '__name__', 'read')}, retrying in {delay:.1f}s (attempt {attempt}/{max_tries})")
-                time.sleep(delay)
-                delay *= 2
-            else:
-                raise
-
 def load_sheet(ref_sheets):
-    # Include Sheets scopes for reads/writes + Drive (as you had)
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",          # read/write
-        "https://www.googleapis.com/auth/spreadsheets.readonly", # read
-        "https://www.googleapis.com/auth/drive",                 # drive access (your original)
-        "https://spreadsheets.google.com/feeds",                 # legacy, retained for compatibility
-    ]
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scope)
-    client = gspread.authorize(creds)
+    client = get_gsheet_client()
     sheet_id = resolve_sheet_id(ref_sheets)
     return client.open_by_key(sheet_id)
 
@@ -58,8 +26,8 @@ def prepare_feed_list(ref_sheets, source_tab, dest_tab):
 
     # 👉 TOUCH CELL to force sheet refresh/recalc
     try:
-        val = _retry_read(source_ws.acell, "A1").value
-        source_ws.update_acell("A1", val)
+        val = gsheets_retry(source_ws.acell, "A1").value
+        gsheets_retry(source_ws.update_acell, "A1", val)
         print("🔄 Touched A1 to trigger formula recalc.")
     except Exception as e:
         print(f"⚠️  Could not touch A1: {e}")
@@ -74,7 +42,7 @@ def prepare_feed_list(ref_sheets, source_tab, dest_tab):
     copy_rows = [row[:3] for row in source_data if len(row) > 3 and str(row[3]).startswith("Copy")]
 
     if copy_rows:
-        dest_ws.append_rows(copy_rows, value_input_option='USER_ENTERED')
+        gsheets_retry(dest_ws.append_rows, copy_rows, value_input_option='USER_ENTERED')
         print(f"🧹 Step 1: Appended {len(copy_rows)} 'Copy' rows to destination.")
     else:
         print("⚠️  Step 1: No 'Copy' rows found.")
@@ -96,9 +64,9 @@ def prepare_feed_list(ref_sheets, source_tab, dest_tab):
             deduped_rows.append(row[:3])  # Only A, B, C
 
     # Overwrite destination sheet from row 2 (only A-C columns)
-    dest_ws.batch_clear([f"A2:C{len(dest_data)+1}"])
+    gsheets_retry(dest_ws.batch_clear, [f"A2:C{len(dest_data)+1}"])
     if deduped_rows:
-        dest_ws.update(range_name="A2", values=deduped_rows, value_input_option='USER_ENTERED')
+        gsheets_retry(dest_ws.update, range_name="A2", values=deduped_rows, value_input_option='USER_ENTERED')
         print(f"🗑️  Step 3: Removed duplicates by Ticker. Remaining rows: {len(deduped_rows)}")
     else:
         print(f"🗑️  Step 3: Destination emptied after deduplication.")
@@ -111,9 +79,9 @@ def prepare_feed_list(ref_sheets, source_tab, dest_tab):
         filtered_rows = [row[:3] for row in deduped_rows if len(row) > 1 and row[1] not in remove_tickers]
         removed = before - len(filtered_rows)
         # Clear based on previous on-sheet length (dest_data) to avoid leftovers
-        dest_ws.batch_clear([f"A2:C{len(dest_data)+1}"])
+        gsheets_retry(dest_ws.batch_clear, [f"A2:C{len(dest_data)+1}"])
         if filtered_rows:
-            dest_ws.update(range_name="A2", values=filtered_rows, value_input_option='USER_ENTERED')
+            gsheets_retry(dest_ws.update, range_name="A2", values=filtered_rows, value_input_option='USER_ENTERED')
         print(f"🗑️  Step 4: Removed {removed} rows matching 'Remove' tickers.")
     else:
         print("⚠️  Step 4: No 'Remove' tickers found.")

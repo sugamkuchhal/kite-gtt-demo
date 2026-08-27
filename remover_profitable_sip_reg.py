@@ -27,10 +27,9 @@ import logging
 import subprocess
 import time
 
-import gspread
-from google.oauth2.service_account import Credentials
 
-from runtime_paths import get_creds_path, repo_root
+from runtime_paths import repo_root
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 # ==========================
@@ -48,23 +47,20 @@ TARGET_REF = "PORTFOLIO"
 TARGET_TAB = "SPECIAL_TARGET_KWK_SIP_REG"
 TARGET_COL = "I"
 
-SERVICE_CREDS = str(get_creds_path())
 
 # ==========================
 # Core logic
 # ==========================
 
 def get_client():
-    scope = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_file(SERVICE_CREDS, scopes=scope)
-    return gspread.authorize(creds)
+    return get_gsheet_client()
 
 
 def _validate_headers(sip_ws, target_ws):
     """Row 1 must carry headers; fail loudly if blank. Q1 is excluded —
     it holds the healing signal formula, not a header."""
-    sip_a1 = (sip_ws.acell("A1").value or "").strip()
-    target_i1 = (target_ws.acell(f"{TARGET_COL}1").value or "").strip()
+    sip_a1 = (gsheets_retry(sip_ws.acell, "A1").value or "").strip()
+    target_i1 = (gsheets_retry(target_ws.acell, f"{TARGET_COL}1").value or "").strip()
     problems = []
     if not sip_a1:
         problems.append(f"{SIP_TAB}!A1 header is blank")
@@ -106,13 +102,13 @@ def process_sip_list(ws):
         return []
 
     if keep_ae:
-        ws.update(
+        gsheets_retry(ws.update,
             f"A2:E{len(keep_ae) + 1}",
             keep_ae,
             value_input_option="RAW",
         )
     if old_len > len(keep_ae):
-        ws.batch_clear([f"A{len(keep_ae) + 2}:E{old_len + 1}"])
+        gsheets_retry(ws.batch_clear, [f"A{len(keep_ae) + 2}:E{old_len + 1}"])
 
     logging.info(
         "%s A:E compacted: %d row(s) cleared, %d row(s) remain.",
@@ -145,12 +141,12 @@ def purge_target_column(ws, remove_set):
     purged = old_len - len(keep)
     if purged > 0:
         if keep:
-            ws.update(
+            gsheets_retry(ws.update,
                 f"{TARGET_COL}2:{TARGET_COL}{len(keep) + 1}",
                 keep,
                 value_input_option="RAW",
             )
-        ws.batch_clear([f"{TARGET_COL}{len(keep) + 2}:{TARGET_COL}{old_len + 1}"])
+        gsheets_retry(ws.batch_clear, [f"{TARGET_COL}{len(keep) + 2}:{TARGET_COL}{old_len + 1}"])
         logging.info(
             "[%s] purged %d cell(s) (%s) from column %s; %d remain.",
             TARGET_TAB, purged, ", ".join(sorted(found)), TARGET_COL, len(keep),

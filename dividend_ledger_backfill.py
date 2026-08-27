@@ -38,10 +38,8 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 
 import requests
-import gspread
-from google.oauth2.service_account import Credentials
 
-from runtime_paths import get_creds_path
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -50,7 +48,6 @@ from script_logger import log_start, log_end
 _RUN_CTX = log_start("dividend_ledger_backfill")
 atexit.register(log_end, _RUN_CTX)
 
-SERVICE_CREDS = str(get_creds_path())
 
 # ==========================
 # Config (constants)
@@ -131,7 +128,7 @@ def read_trades(client, sheet_id):
     and reported, not silently dropped.
     """
     ws = client.open_by_key(sheet_id).worksheet(ORDERS_TAB)
-    records = ws.get_all_records()
+    records = gsheets_retry(ws.get_all_records)
     trades = defaultdict(list)
     bad_rows = 0
     first_date = None
@@ -167,7 +164,7 @@ def qty_on_ex_date(trade_list, ex_date):
 def read_portfolio_qty(client, sheet_id):
     """Current quantities from the Portfolio tab (sanity gate)."""
     ws = client.open_by_key(sheet_id).worksheet(HOLDINGS_TAB)
-    rows = ws.get_all_values()
+    rows = gsheets_retry(ws.get_all_values)
     qty = {}
     for row in rows[1:]:
         symbol = normalize_symbol(row[0]) if len(row) > 0 else ""
@@ -379,7 +376,7 @@ def append_to_ledger(client, sheet_id, entries):
     ws = client.open_by_key(sheet_id).worksheet(LEDGER_TAB)
     existing = ws.get_all_values()
     if not existing:
-        ws.update(values=[LEDGER_HEADERS], range_name="A1")
+        gsheets_retry(ws.update, values=[LEDGER_HEADERS], range_name="A1")
         existing = [LEDGER_HEADERS]
         logging.info("Wrote headers to empty %s tab.", LEDGER_TAB)
 
@@ -407,7 +404,7 @@ def append_to_ledger(client, sheet_id, entries):
         ])
 
     if new_rows:
-        ws.append_rows(new_rows, value_input_option="USER_ENTERED")
+        gsheets_retry(ws.append_rows, new_rows, value_input_option="USER_ENTERED")
     logging.info("Ledger: appended %d row(s), skipped %d duplicate(s).",
                  len(new_rows), skipped)
     return len(new_rows), skipped

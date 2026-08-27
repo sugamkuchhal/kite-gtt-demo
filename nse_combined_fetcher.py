@@ -34,7 +34,7 @@ import requests
 import yfinance as yf
 from datetime import datetime
 import gspread
-from google.oauth2.service_account import Credentials
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from tqdm import tqdm
 
 from runtime_paths import get_creds_path
@@ -49,7 +49,6 @@ except Exception:
     NumberFormat = lambda *a, **k: None
 
 # ===== Editable defaults (set these once, or override via CLI) =====
-DEFAULT_CREDENTIALS_FILE = str(get_creds_path())
 DEFAULT_REF_SHEETS = "TICKER"
 # ==================================================================
 
@@ -275,9 +274,7 @@ class NSEBaseFetcher:
 
     # ----- Google Sheets helpers -----
     def setup_google_sheets(self, credentials_file: str, ref_sheets: str):
-        scopes = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        creds = Credentials.from_service_account_file(credentials_file, scopes=scopes)
-        client = gspread.authorize(creds)
+        client = get_gsheet_client()
         spreadsheet_id = resolve_sheet_id(ref_sheets)
         spreadsheet = client.open_by_key(spreadsheet_id)
         return client, spreadsheet
@@ -305,10 +302,10 @@ class NSEBaseFetcher:
         """
         client, spreadsheet = self.setup_google_sheets(credentials_file, ref_sheets)
         try:
-            worksheet = spreadsheet.worksheet(worksheet_name)
-            worksheet.clear()
+            worksheet = gsheets_retry(spreadsheet.worksheet, worksheet_name)
+            gsheets_retry(worksheet.clear)
         except gspread.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(title=worksheet_name, rows=max(1000, len(df) + 10), cols=max(10, len(df.columns)))
+            worksheet = gsheets_retry(spreadsheet.add_worksheet, title=worksheet_name, rows=max(1000, len(df) + 10), cols=max(10, len(df.columns)))
 
         # Prepare data (include header)
         data = [df.columns.tolist()] + df.values.tolist()
