@@ -33,7 +33,6 @@ from pathlib import Path
 
 import pandas as pd
 import yfinance as yf
-from google.oauth2.service_account import Credentials
 import gspread
 
 # ── Path setup ────────────────────────────────────────────────────────────────
@@ -42,6 +41,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 sys.path.insert(0, str(_REPO_ROOT / "db"))
 
 from db import get_conn, init_db, update_meta
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from runtime_paths import (get_creds_path, get_smtp_token_path,
                            SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT,
                            DEFAULT_RECIPIENT_EMAIL)
@@ -86,16 +86,11 @@ def _load_txt(path: Path, ticker_type: str) -> list[tuple[str, str]]:
     return tickers
 
 
-def _load_delisted(creds_path: Path) -> list[tuple[str, str]]:
+def _load_delisted(creds_path: Path = None) -> list[tuple[str, str]]:
     log.info("Loading delisted tickers from PORTFOLIO > DELISTED...")
-    scopes = [
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive",
-    ]
-    creds  = Credentials.from_service_account_file(str(creds_path), scopes=scopes)
-    client = gspread.authorize(creds)
+    client = get_gsheet_client()
     ws     = client.open_by_key(PORTFOLIO_SHEET).worksheet(DELISTED_TAB)
-    col_c  = ws.col_values(3)
+    col_c  = gsheets_retry(ws.col_values, 3)
     tickers = []
     for val in col_c[1:]:
         s = val.strip()
@@ -117,7 +112,7 @@ def load_tickers(run_stock: bool, run_etf: bool, run_delisted: bool) -> list[tup
             tickers[symbol] = t
     if run_delisted:
         try:
-            for symbol, t in _load_delisted(get_creds_path()):
+            for symbol, t in _load_delisted():
                 if symbol not in tickers:
                     tickers[symbol] = t
         except Exception as e:

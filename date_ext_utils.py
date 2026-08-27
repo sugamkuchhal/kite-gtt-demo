@@ -1,21 +1,10 @@
 from datetime import datetime, date
-import gspread
-from google.oauth2.service_account import Credentials
-
-from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
-
-CREDS_PATH = str(get_creds_path())
-_SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-
-
-def get_client():
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=_SCOPES)
-    return gspread.authorize(creds)
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 
 
 def get_ws(ref_sheets, tab_name):
-    gc = get_client()
+    gc = get_gsheet_client()
     sheet_id = resolve_sheet_id(ref_sheets)
     sh = gc.open_by_key(sheet_id)
     ws = sh.worksheet(tab_name)
@@ -32,7 +21,7 @@ def init_date(sheet_title, ws_src, src_cell, ws_dest, dest_cell):
         False  — date was copied but destination value was already the same
         None   — date was not copied (future date or parse error)
     """
-    value = ws_src.acell(src_cell).value
+    value = gsheets_retry(ws_src.acell, src_cell).value
     try:
         cell_date = datetime.strptime(value, "%d-%b-%Y").date()
     except Exception as e:
@@ -43,8 +32,8 @@ def init_date(sheet_title, ws_src, src_cell, ws_dest, dest_cell):
         print(f"{sheet_title} -> 🚫 Not copying: date {cell_date} is after today.")
         return None
 
-    before = ws_dest.acell(dest_cell).value
-    ws_dest.update_acell(dest_cell, value)
+    before = gsheets_retry(ws_dest.acell, dest_cell).value
+    gsheets_retry(ws_dest.update_acell, dest_cell, value)
     changed = (value != before)
 
     if changed:

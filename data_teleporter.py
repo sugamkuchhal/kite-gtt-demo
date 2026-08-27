@@ -34,6 +34,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from runtime_paths import get_creds_path
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -317,14 +318,11 @@ def run_inc(svc, src_id: str, dest_id: str, dry_run: bool) -> None:
     # delete duplicates (rare; use Sheets API delete rows)
     if to_delete:
         print(f"  Deleting {len(to_delete)} duplicate row(s)...")
-        import gspread
-        from google.oauth2.service_account import Credentials as _Creds
-        _creds = _Creds.from_service_account_file(CREDS_PATH, scopes=SCOPES)
-        _gc = gspread.authorize(_creds)
+        _gc = get_gsheet_client()
         _ws = _gc.open_by_key(dest_id).worksheet(TAB_FINAL_DEST)
         for r in sorted(set(to_delete), reverse=True):
             try:
-                _ws.delete_rows(r)
+                gsheets_retry(_ws.delete_rows, r)
                 time.sleep(0.05)
             except Exception as e:
                 print(f"  ⚠ delete row {r}: {e}")

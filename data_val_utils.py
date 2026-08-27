@@ -1,16 +1,9 @@
-import gspread
-from google.oauth2.service_account import Credentials
-
-from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
-
-CREDS_PATH = str(get_creds_path())
-_SCOPES = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 
 
 def get_ws(ref_sheets, tab_name):
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=_SCOPES)
-    gc = gspread.authorize(creds)
+    gc = get_gsheet_client()
     sheet_id = resolve_sheet_id(ref_sheets)
     sh = gc.open_by_key(sheet_id)
     ws = sh.worksheet(tab_name)
@@ -18,7 +11,7 @@ def get_ws(ref_sheets, tab_name):
 
 
 def check_gt_threshold(sheet_title, ws, cell, threshold=0.995):
-    value = ws.acell(cell).value
+    value = gsheets_retry(ws.acell, cell).value
     try:
         if value is None or str(value).strip().lower() in ("", "na", "n/a", "null", "none"):
             val_float = 0.0

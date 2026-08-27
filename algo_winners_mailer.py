@@ -2,8 +2,6 @@
 import argparse
 import logging
 import sys
-import gspread
-from google.oauth2.service_account import Credentials
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -14,7 +12,8 @@ import os
 import urllib.request
 import urllib.parse
 
-from runtime_paths import get_creds_path, get_smtp_token_path, get_telegram_token_path, SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT, TELEGRAM_CHAT_ID
+from runtime_paths import get_smtp_token_path, get_telegram_token_path, SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT, TELEGRAM_CHAT_ID
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -29,7 +28,6 @@ SMTP_TOKEN_FILE = str(get_smtp_token_path())
 # ==========================
 ref_sheets = "HEDGE_PORTFOLIO"
 tab_name = "Portfolio_BALANCE"
-SERVICE_CREDS = str(get_creds_path())
 
 # Column letters -> 0-indexed positions on the Portfolio_BALANCE tab
 COL_TICKER = 0   # A
@@ -124,13 +122,10 @@ def send_via_telegram(bot_token, chat_id, text):
     logging.info("Telegram message sent successfully.")
 
 
-def read_sheet(sheet_id, tab_name, service_creds):
-    logging.info("Authenticating to Google Sheets with service account: %s", service_creds)
-    scope = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    creds = Credentials.from_service_account_file(service_creds, scopes=scope)
-    client = gspread.authorize(creds)
+def read_sheet(sheet_id, tab_name):
+    client = get_gsheet_client()
     ws = client.open_by_key(sheet_id).worksheet(tab_name)
-    rows = ws.get_all_values()
+    rows = gsheets_retry(ws.get_all_values)
     logging.info("Read %d total rows (including header/empty rows) from tab '%s'.", len(rows), tab_name)
     return rows
 
@@ -282,7 +277,7 @@ def main():
 
     sheet_id = resolve_sheet_id(ref_sheets)
     sheet_url = SHEET_URL_TEMPLATE.format(sheet_id=sheet_id)
-    rows = read_sheet(sheet_id, tab_name, SERVICE_CREDS)
+    rows = read_sheet(sheet_id, tab_name)
     if not rows:
         logging.error("No rows read from '%s' tab — aborting.", tab_name)
         sys.exit(1)
