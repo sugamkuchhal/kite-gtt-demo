@@ -326,7 +326,7 @@ class NSEBaseFetcher:
             attempt = 0
             while attempt < max_attempts:
                 try:
-                    worksheet.update(values=current_batch, range_name=range_name, value_input_option="USER_ENTERED")
+                    gsheets_retry(worksheet.update, values=current_batch, range_name=range_name, value_input_option="USER_ENTERED")
                     break
                 except Exception as e:
                     txt = str(e).lower()

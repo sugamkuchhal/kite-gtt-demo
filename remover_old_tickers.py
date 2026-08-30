@@ -92,7 +92,7 @@ def read_master_live_tickers(client):
     """
     sheet_id = resolve_sheet_id(MASTER_LIVE_REF)
     ws = client.open_by_key(sheet_id).worksheet(MASTER_LIVE_TAB)
-    values = ws.get_values(f"{MASTER_LIVE_TICKER_START}:H")
+    values = gsheets_retry(ws.get_values, f"{MASTER_LIVE_TICKER_START}:H")
     removed = [row[0].strip() for row in values if row and row[0].strip()]
     logging.info(
         "Read %d ticker(s) from %s!%s: %s",
@@ -109,7 +109,7 @@ def purge_feed_tab(client, sheet_id, tab_name, remove_set):
     Returns a result dict for reporting.
     """
     ws = client.open_by_key(sheet_id).worksheet(tab_name)
-    values = ws.get_values("A2:C")
+    values = gsheets_retry(ws.get_values, "A2:C")
     old_len = len(values)
 
     keep_rows = []
