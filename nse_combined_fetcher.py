@@ -147,7 +147,7 @@ class NSEBaseFetcher:
                 "Day_High":      info.get("dayHigh"),
                 "Day_Low":       info.get("dayLow"),
                 "Volume":        info.get("volume"),       # -> Volume (in Cr.)
-                "Last_Updated":  datetime.now().strftime("%Y-%m-%d"),
+                "Last_Updated":  self._run_date,
             }
         except Exception:
             raise
@@ -440,6 +440,7 @@ def main():
     parser.add_argument("--worksheet", type=str, required=True, help="Worksheet/tab name to write (required)")
     parser.add_argument("--max-workers", type=int, default=10, help="Thread pool size for Yahoo fetches")
     parser.add_argument("--batch-size", type=int, default=200, help="Initial batch size for Sheets upload (adaptive)")
+    parser.add_argument("--date", type=str, default=None, help="Override date for Last_Updated (YYYY-MM-DD). Defaults to today.")
     args = parser.parse_args()
 
     mode = args.mode.lower()
