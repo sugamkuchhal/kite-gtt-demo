@@ -110,6 +110,7 @@ class NSEBaseFetcher:
         self.max_workers = max_workers
         self.stock_data: List[Dict[str, Any]] = []
         self.failed_symbols: List[str] = []
+        self._run_date = run_date or datetime.now().strftime("%Y-%m-%d")
 
     def _symbol_for_yahoo(self, symbol: str) -> str:
         # symbol is like "NSE:RELIANCE" -> return "RELIANCE.NS"
