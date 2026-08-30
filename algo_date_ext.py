@@ -3,7 +3,8 @@ import time
 
 from ref_sheets_utils import resolve_sheet_id
 from script_logger import log_start, log_end
-from date_ext_utils import get_client, get_ws, init_date
+from date_ext_utils import get_ws, init_date
+from google_sheets_utils import get_gsheet_client as get_client
 
 LOOP_INTERVAL = 70  # seconds between iterations
 
