@@ -19,10 +19,10 @@ sheet_id = resolve_sheet_id(ref_sheets)
 spreadsheet = client.open_by_key(sheet_id)
 
 # Sheets
-symbol_sheet = spreadsheet.worksheet(tab_name_symbol)
-calc_sheet = spreadsheet.worksheet(tab_name_calc)
-inp_sheet = spreadsheet.worksheet(tab_name_inp)
-bank_sheet = spreadsheet.worksheet(tab_name_bank_creator)
+symbol_sheet = gsheets_retry(spreadsheet.worksheet, tab_name_symbol)
+calc_sheet = gsheets_retry(spreadsheet.worksheet, tab_name_calc)
+inp_sheet = gsheets_retry(spreadsheet.worksheet, tab_name_inp)
+bank_sheet = gsheets_retry(spreadsheet.worksheet, tab_name_bank_creator)
 
 # Get symbols
 symbols = gsheets_retry(symbol_sheet.col_values, 1)[1:]  # Skip header (A2:A)
@@ -74,7 +74,7 @@ for i, symbol in enumerate(symbols):
         continue
 
     # 3. Read & clean INP!A2:F900
-    inp_data = inp_sheet.get("A2:F900")
+    inp_data = gsheets_retry(inp_sheet.get, "A2:F900")
     filtered_data = [clean_row(row) for row in inp_data if any(cell.strip() for cell in row)]
 
     if not filtered_data:
@@ -88,7 +88,7 @@ for i, symbol in enumerate(symbols):
 
     if needed_rows > bank_sheet.row_count:
         rows_to_add = needed_rows - bank_sheet.row_count
-        bank_sheet.add_rows(rows_to_add)
+        gsheets_retry(bank_sheet.add_rows, rows_to_add)
         logging.info(f"📐 Added {rows_to_add} rows to {tab_name_bank_creator} to fit incoming data.")
 
     # Update
