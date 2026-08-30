@@ -273,7 +273,7 @@ class NSEBaseFetcher:
         return df
 
     # ----- Google Sheets helpers -----
-    def setup_google_sheets(self, credentials_file: str, ref_sheets: str):
+    def setup_google_sheets(self, ref_sheets: str):
         client = get_gsheet_client()
         spreadsheet_id = resolve_sheet_id(ref_sheets)
         spreadsheet = client.open_by_key(spreadsheet_id)
@@ -291,7 +291,6 @@ class NSEBaseFetcher:
 
     def upload_to_sheets(self,
                          df: pd.DataFrame,
-                         credentials_file: str,
                          ref_sheets: str,
                          worksheet_name: str,
                          initial_batch_size: int = 200):
@@ -300,7 +299,7 @@ class NSEBaseFetcher:
         Also applies full formatting: 2-decimals for numeric columns, date format for Last_Updated,
         and freezes header row.
         """
-        client, spreadsheet = self.setup_google_sheets(credentials_file, ref_sheets)
+        client, spreadsheet = self.setup_google_sheets(ref_sheets)
         try:
             worksheet = gsheets_retry(spreadsheet.worksheet, worksheet_name)
             gsheets_retry(worksheet.clear)
@@ -474,7 +473,7 @@ def main():
 
     # upload to google sheets (always)
     try:
-        fetcher.upload_to_sheets(df, DEFAULT_CREDENTIALS_FILE, ref_sheets, worksheet, initial_batch_size=args.batch_size)
+        fetcher.upload_to_sheets(df, ref_sheets, worksheet, initial_batch_size=args.batch_size)
     except Exception as e:
         logger.error(f"Google Sheets upload failed: {e}")
         # still continue to summary
