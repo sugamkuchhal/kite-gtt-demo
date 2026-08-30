@@ -105,7 +105,7 @@ def exponential_backoff(attempt: int) -> float:
 
 # ----------------- Fetcher Base -----------------
 class NSEBaseFetcher:
-    def __init__(self, symbols: Optional[List[str]] = None, max_workers: int = 10):
+    def __init__(self, symbols: Optional[List[str]] = None, max_workers: int = 10, run_date: str = None):
         self.symbols = symbols or []
         self.max_workers = max_workers
         self.stock_data: List[Dict[str, Any]] = []
@@ -447,7 +447,7 @@ def main():
     ref_sheets = args.ref_sheets
 
     if mode == "stock":
-        fetcher = NSEStockDataFetcher(max_workers=args.max_workers)
+        fetcher = NSEStockDataFetcher(max_workers=args.max_workers, run_date=args.date)
         try:
             fetcher.load_symbols(args.ticker_file)
         except Exception as e:
@@ -456,7 +456,7 @@ def main():
         worksheet = args.worksheet
 
     else:
-        fetcher = NSEETFDataFetcher(max_workers=args.max_workers)
+        fetcher = NSEETFDataFetcher(max_workers=args.max_workers, run_date=args.date)
         try:
             fetcher.load_symbols(args.ticker_file)
         except Exception as e:
