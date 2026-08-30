@@ -188,10 +188,7 @@ def next_trading_day(today, holidays):
 # ==========================
 
 def _gs_client():
-    scope = ["https://spreadsheets.google.com/feeds",
-             "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_file(SERVICE_CREDS, scopes=scope)
-    return gspread.authorize(creds)
+    return get_gsheet_client()
 
 
 def normalize_symbol(raw):
