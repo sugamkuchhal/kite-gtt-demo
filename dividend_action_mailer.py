@@ -373,7 +373,7 @@ def append_to_ledger(sheet_id, entries, locked_date):
     """
     client = _gs_client()
     ws = client.open_by_key(sheet_id).worksheet(LEDGER_TAB)
-    existing = ws.get_all_values()
+    existing = gsheets_retry(ws.get_all_values)
 
     if not existing:
         gsheets_retry(ws.update, values=[LEDGER_HEADERS], range_name="A1")

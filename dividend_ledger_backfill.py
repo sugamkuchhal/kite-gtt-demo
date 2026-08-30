@@ -374,7 +374,7 @@ def build_ledger_rows(raw_rows, trades, portfolio_qty, today):
 def append_to_ledger(client, sheet_id, entries):
     """Append entries (deduped on Symbol+Ex-Date vs existing rows)."""
     ws = client.open_by_key(sheet_id).worksheet(LEDGER_TAB)
-    existing = ws.get_all_values()
+    existing = gsheets_retry(ws.get_all_values)
     if not existing:
         gsheets_retry(ws.update, values=[LEDGER_HEADERS], range_name="A1")
         existing = [LEDGER_HEADERS]

@@ -248,7 +248,7 @@ def main():
         try:
             ws = sheet.worksheet(title)
         except gspread.exceptions.WorksheetNotFound:
-            ws = sheet.add_worksheet(title=title, rows="1000", cols="50")
+            ws = gsheets_retry(sheet.add_worksheet, title=title, rows="1000", cols="50")
         gsheets_retry(ws.clear)
 
         # Safe conversion: datetime → YYYY-MM-DD string

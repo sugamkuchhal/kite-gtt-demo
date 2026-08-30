@@ -83,7 +83,7 @@ def process_sip_list(ws):
     compacts the A:E block upward with those rows dropped, and returns
     the list of flagged tickers (column A).
     """
-    values = ws.get_values("A2:Q")
+    values = gsheets_retry(ws.get_values, "A2:Q")
     old_len = len(values)
 
     keep_ae, flagged = [], []
@@ -123,7 +123,7 @@ def purge_target_column(ws, remove_set):
     flagged tickers; compacts the column upward, clears trailing cells.
     """
     rng = f"{TARGET_COL}2:{TARGET_COL}"
-    values = ws.get_values(rng)
+    values = gsheets_retry(ws.get_values, rng)
     old_len = len(values)
 
     keep, found = [], set()
