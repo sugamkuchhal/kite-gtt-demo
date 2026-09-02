@@ -28,6 +28,7 @@ import re
 import textwrap
 from datetime import date
 from dataclasses import dataclass
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from typing import Iterable, Sequence
 
 SHEETS_SCOPE = [
@@ -328,7 +329,6 @@ def resolve_spreadsheet_id(sheet_id_or_ref: str) -> str:
     open them directly and report any access/not-found errors.
     """
     from ref_sheets_utils import resolve_sheet_id
-from google_sheets_utils import gsheets_retry
 
     try:
         return resolve_sheet_id(sheet_id_or_ref)
@@ -338,7 +338,7 @@ from google_sheets_utils import gsheets_retry
 
 def get_service_account_email() -> str:
     """Return the service-account email used for authentication."""
-        gc = get_gsheet_client()
+    gc = get_gsheet_client()
     return gc.auth.service_account_email
 
 
