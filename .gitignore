@@ -13,3 +13,5 @@ creds.json
 smtp_token.json
 telegram_token.json
 
+# Database (do not commit — LFS history purged)
+db/trading.db
