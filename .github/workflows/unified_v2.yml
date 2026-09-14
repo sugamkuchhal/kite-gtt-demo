@@ -40,6 +40,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v5
+        with:
+          lfs: false
 
       - name: Decide auto action window
         id: plan
@@ -286,5 +288,3 @@ jobs:
               echo "::notice::action=$ACTION has no chain; exiting."
             fi
           '
-
-
