@@ -1,9 +1,8 @@
-import gspread
 from datetime import datetime
 import argparse
 import logging
 
-from runtime_paths import get_creds_path
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 import atexit
@@ -11,9 +10,6 @@ from script_logger import log_start, log_end
 
 _RUN_CTX = log_start("ops_sort")
 atexit.register(log_end, _RUN_CTX)
-# --- CONFIGURATION ---
-CREDENTIALS_PATH = str(get_creds_path())
-
 # --- HELPERS ---
 def log(msg):
     # print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}")
@@ -39,7 +35,7 @@ def get_rows_with_action(data_rows, keyword):
 def read_p1(ws):
     """Read P1 signal cell. Returns int count; 0 if blank or non-numeric."""
     try:
-        val = ws.acell("P1").value
+        val = gsheets_retry(ws.acell, "P1").value
         return int(float(str(val).replace(",", "").strip()))
     except (TypeError, ValueError):
         return 0
@@ -48,33 +44,33 @@ def main():
     args = parse_args()
     log("")
     sheet_id = resolve_sheet_id(args.ref_sheets)
-    gc = gspread.service_account(filename=CREDENTIALS_PATH)
+    gc = get_gsheet_client()
     wb = gc.open_by_key(sheet_id)
 
     green_ws = wb.worksheet(args.green_tab)
     red_ws = wb.worksheet(args.red_tab)
     yellow_ws = wb.worksheet(args.yellow_tab)
 
-    green_rows = green_ws.get_values("A2:O")
-    red_rows   = red_ws.get_values("A2:O")
-    yellow_rows = yellow_ws.get_values("A2:O")
+    green_rows = gsheets_retry(green_ws.get_values, "A2:O")
+    red_rows   = gsheets_retry(red_ws.get_values, "A2:O")
+    yellow_rows = gsheets_retry(yellow_ws.get_values, "A2:O")
 
     # --------- 1. CLEAR ACTION SHEET ---------
     log("CLEAR TASK: Clearing Action Sheet")
     if yellow_rows:
         # Clear all except header
-        yellow_ws.batch_clear([f"A2:O{yellow_ws.row_count}"])
+        gsheets_retry(yellow_ws.batch_clear, [f"A2:O{yellow_ws.row_count}"])
         log("CLEAR TASK: Rows cleared from Action Sheet")
     else:
         log("CLEAR TASK: Nothing to clear")
     
     # --------- recompute next-append rows AFTER clear ---------
     # Yellow should start right under the header (row 2)
-    yellow_colA_count = len(yellow_ws.col_values(1))
+    yellow_colA_count = len(gsheets_retry(yellow_ws.col_values, 1))
     yellow_next = max(2, yellow_colA_count + 1)
     
     # Red can be computed once here
-    red_next = len(red_ws.col_values(1)) + 1
+    red_next = len(gsheets_retry(red_ws.col_values, 1)) + 1
 
     log(f"⚙️ SCRIPT STARTED for {wb.title}")
 
@@ -82,7 +78,7 @@ def main():
     stamp = datetime.now().isoformat(timespec="seconds")  # already imported at top
     for ws, name in [(green_ws, "Green"), (red_ws, "Red"), (yellow_ws, "Yellow")]:
         try:
-            ws.update_acell("F1", stamp)  # any write triggers recalc
+            gsheets_retry(ws.update_acell, "F1", stamp)  # any write triggers recalc
             log(f"TOUCH: Triggered formula recalc for {name} Sheet.")
         except Exception as e:
             log(f"TOUCH: Could not touch {name} Sheet: {e}")
@@ -127,7 +123,7 @@ def main():
         # Batch append to Yellow
         if yellow_update_rows:
             start_row = yellow_next
-            yellow_ws.update(range_name=f"A{start_row}:O{start_row+len(yellow_update_rows)-1}", values=yellow_update_rows, value_input_option='USER_ENTERED')
+            gsheets_retry(yellow_ws.update, range_name=f"A{start_row}:O{start_row+len(yellow_update_rows)-1}", values=yellow_update_rows, value_input_option='USER_ENTERED')
             yellow_next += len(yellow_update_rows)
 
         # --- BATCHED: Batch update Red (all at once, not per-row) ---
@@ -135,7 +131,7 @@ def main():
             requests = []
             for idx, vals in zip(red_update_idxs, red_update_values):
                 requests.append({'range': f"A{idx}:E{idx}", 'values': [vals]})
-            red_ws.batch_update(requests,value_input_option='USER_ENTERED')
+            gsheets_retry(red_ws.batch_update, requests, value_input_option='USER_ENTERED')
 
         # --------- 3. BATCH INSERT TASK (Green only) ---------
         log("INSERT TASK: Looking for 'Insert' rows in Green Sheet")
@@ -150,12 +146,12 @@ def main():
 
         if yellow_insert_rows:
             start_row = yellow_next
-            yellow_ws.update(range_name=f"A{start_row}:O{start_row+len(yellow_insert_rows)-1}", values=yellow_insert_rows, value_input_option='USER_ENTERED')
+            gsheets_retry(yellow_ws.update, range_name=f"A{start_row}:O{start_row+len(yellow_insert_rows)-1}", values=yellow_insert_rows, value_input_option='USER_ENTERED')
             yellow_next += len(yellow_insert_rows)
 
         if red_insert_rows:
             start_row = red_next
-            red_ws.update(range_name=f"A{start_row}:E{start_row+len(red_insert_rows)-1}", values=red_insert_rows, value_input_option='USER_ENTERED')
+            gsheets_retry(red_ws.update, range_name=f"A{start_row}:E{start_row+len(red_insert_rows)-1}", values=red_insert_rows, value_input_option='USER_ENTERED')
             red_next += len(red_insert_rows)
     else:
         log("UPDATE TASK: Green P1=0 — skipping update + insert.")
@@ -176,7 +172,7 @@ def main():
         # Append all delete actions to Yellow at once
         if yellow_delete_rows:
             start_row = yellow_next
-            yellow_ws.update(range_name=f"A{start_row}:O{start_row+len(yellow_delete_rows)-1}", values=yellow_delete_rows, value_input_option='USER_ENTERED')
+            gsheets_retry(yellow_ws.update, range_name=f"A{start_row}:O{start_row+len(yellow_delete_rows)-1}", values=yellow_delete_rows, value_input_option='USER_ENTERED')
             yellow_next += len(yellow_delete_rows)
 
         # --- BATCHED: Clear A–E of all relevant Red rows at once ---
@@ -184,11 +180,11 @@ def main():
             requests = []
             for idx in red_delete_idxs:
                 requests.append({'range': f"A{idx}:E{idx}", 'values': [[""]*5]})
-            red_ws.batch_update(requests,value_input_option='USER_ENTERED')
+            gsheets_retry(red_ws.batch_update, requests, value_input_option='USER_ENTERED')
 
         # Sort Red Sheet by A (ascending), if needed (API supports basic sorts)
         if red_delete_idxs:
-            red_ws.sort((1, 'asc'))  # sort by Col A
+            gsheets_retry(red_ws.sort, (1, 'asc'))  # sort by Col A
     else:
         log("DELETE TASK: Red P1=0 — skipping delete.")
 
