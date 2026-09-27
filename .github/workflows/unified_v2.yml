@@ -24,6 +24,7 @@ on:
           - refresh
           - normalize
           - teleport_full
+          - hedge
 
 # Overlap safety: queue new runs until the current one finishes
 concurrency:
@@ -256,6 +257,19 @@ jobs:
             if [ "$ACTION" = "refresh" ]; then
               echo "::notice::mode=refresh → forcing token refresh"
               ensure_token_cmd --force
+              exit 0
+            fi
+
+            # Hedge mode: run only the hedge-account chain, main account untouched
+            if [ "$ACTION" = "hedge" ]; then
+              echo "::group::RUN: Hedge-only chain"
+              ensure_token_hedge_cmd
+              run_hedge python3 fetch_all_gtts.py --ref-sheets HEDGE_PORTFOLIO
+              run_hedge python3 fetch_all_orders.py --ref-sheets HEDGE_PORTFOLIO
+              run_hedge python3 append_new_orders.py --ref-sheets HEDGE_PORTFOLIO
+              run_hedge python3 fifo_portfolio.py --ref-sheets HEDGE_PORTFOLIO
+              run_hedge python3 fetch_holdings.py --ref-sheets HEDGE_PORTFOLIO
+              echo "::endgroup::"
               exit 0
             fi
 
