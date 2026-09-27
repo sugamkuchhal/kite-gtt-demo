@@ -137,10 +137,14 @@ jobs:
         env:
           API_KEY: ${{ secrets.API_KEY }}
           ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+          API_KEY_HEDGE: ${{ secrets.API_KEY_HEDGE }}
+          ACCESS_TOKEN_HEDGE: ${{ secrets.ACCESS_TOKEN_HEDGE }}
         run: |
           set -euo pipefail
           echo "$API_KEY" > api_key.txt
           echo "$ACCESS_TOKEN" > access_token.txt
+          echo "$API_KEY_HEDGE" > api_key_hedge.txt
+          echo "$ACCESS_TOKEN_HEDGE" > access_token_hedge.txt
 
       - name: Check token validity
         id: token_check
@@ -151,6 +155,7 @@ jobs:
           set -euo pipefail
           if [ "$ACTION" = "refresh" ]; then
             echo "need_login=true" >> "$GITHUB_OUTPUT"
+            echo "need_login_hedge=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           python3 -m pip install --quiet --target .deps_check kiteconnect
@@ -159,9 +164,18 @@ jobs:
           else
             echo "need_login=true" >> "$GITHUB_OUTPUT"
           fi
+          if [ -s api_key_hedge.txt ]; then
+            if API_KEY_PATH="$PWD/api_key_hedge.txt" ACCESS_TOKEN_PATH="$PWD/access_token_hedge.txt" PYTHONPATH=".deps_check${PYTHONPATH:+:$PYTHONPATH}" python3 ensure_token.py --check-only; then
+              echo "need_login_hedge=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "need_login_hedge=true" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "need_login_hedge=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Install Google Chrome
-        if: ${{ steps.plan.outputs.should_run == 'true' && steps.token_check.outputs.need_login == 'true' }}
+        if: ${{ steps.plan.outputs.should_run == 'true' && (steps.token_check.outputs.need_login == 'true' || steps.token_check.outputs.need_login_hedge == 'true') }}
         run: |
           sudo apt-get update -y
           sudo apt-get install -y wget unzip
@@ -218,6 +232,18 @@ jobs:
               ensure_token "$@"
             }
 
+            ensure_token_hedge_cmd() {
+              if [ -s api_key_hedge.txt ]; then
+                API_KEY_PATH="$PWD/api_key_hedge.txt" ACCESS_TOKEN_PATH="$PWD/access_token_hedge.txt" GH_SECRET_NAME="ACCESS_TOKEN_HEDGE" ensure_token "$@"
+              fi
+            }
+
+            run_hedge() {
+              if [ -s api_key_hedge.txt ]; then
+                API_KEY_PATH="$PWD/api_key_hedge.txt" ACCESS_TOKEN_PATH="$PWD/access_token_hedge.txt" TRADING_DB_NAME="trading_hedge.db" "$@"
+              fi
+            }
+
             # Script mode: run a single command (script wrapper)
             if [ "$ACTION" = "script" ]; then
               echo "::notice::mode=script → ensuring token, then running: ${CMD_VAL}"
@@ -235,6 +261,7 @@ jobs:
 
             # Ensure token before running chains
             ensure_token_cmd
+            ensure_token_hedge_cmd
 
             if [ "$ACTION" = "midday" ]; then
               echo "::group::RUN: Mid-day chain"
@@ -242,7 +269,9 @@ jobs:
               python3 zerodha_tick_size.py
               python3 set_field_false.py
               python3 fetch_all_gtts.py
+              run_hedge python3 fetch_all_gtts.py --ref-sheets HEDGE_PORTFOLIO
               python3 fetch_all_orders.py
+              run_hedge python3 fetch_all_orders.py --ref-sheets HEDGE_PORTFOLIO
               bash combined_home_run_midday.sh
               echo "::endgroup::"
             elif [ "$ACTION" = "eod_holiday" ]; then
@@ -254,8 +283,11 @@ jobs:
               bash combined_feeder.sh
               python3 set_field_false.py
               python3 fetch_all_gtts.py
+              run_hedge python3 fetch_all_gtts.py --ref-sheets HEDGE_PORTFOLIO
               python3 fifo_portfolio.py
+              run_hedge python3 fifo_portfolio.py --ref-sheets HEDGE_PORTFOLIO
               python3 fetch_holdings.py
+              run_hedge python3 fetch_holdings.py --ref-sheets HEDGE_PORTFOLIO
               bash combined_main_run.sh
               bash combined_home_run.sh
               echo "::endgroup::"
@@ -268,9 +300,14 @@ jobs:
               bash combined_feeder.sh
               python3 set_field_false.py
               python3 fetch_all_gtts.py
+              run_hedge python3 fetch_all_gtts.py --ref-sheets HEDGE_PORTFOLIO
               bash combined_order_fetch_append.sh
+              run_hedge python3 fetch_all_orders.py --ref-sheets HEDGE_PORTFOLIO
+              run_hedge python3 append_new_orders.py --ref-sheets HEDGE_PORTFOLIO
               python3 fifo_portfolio.py
+              run_hedge python3 fifo_portfolio.py --ref-sheets HEDGE_PORTFOLIO
               python3 fetch_holdings.py
+              run_hedge python3 fetch_holdings.py --ref-sheets HEDGE_PORTFOLIO
               bash combined_main_run.sh
               bash combined_home_run.sh
               echo "::endgroup::"
