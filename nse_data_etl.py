@@ -1,12 +1,10 @@
-import gspread
-from google.oauth2.service_account import Credentials
 import pandas as pd
 from datetime import datetime
 import re
 from gspread_formatting import format_cell_range, cellFormat, numberFormat
 
-from runtime_paths import get_creds_path
 from ref_sheets_utils import resolve_sheet_id
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 
 
 import atexit
@@ -14,7 +12,6 @@ from script_logger import log_start, log_end
 
 _RUN_CTX = log_start("nse_data_etl")
 atexit.register(log_end, _RUN_CTX)
-CREDS_PATH = str(get_creds_path())
 SOURCE_REF_SHEETS = "TICKER"
 STOCK_SHEET_NAME = "NSE_Stock_Data"
 ETF_SHEET_NAME = "NSE_ETF_Data"
@@ -48,7 +45,7 @@ def parse_date_formula(date_formula_str):
 def load_and_clean(client, tabname):
     source_sheet_id = resolve_sheet_id(SOURCE_REF_SHEETS)
     ws = client.open_by_key(source_sheet_id).worksheet(tabname)
-    df = pd.DataFrame(ws.get_all_records())
+    df = pd.DataFrame(gsheets_retry(ws.get_all_records))
     req = ["Symbol", "Current_Price", "Day_Low", "Day_High", "Volume (in Cr.)", "Last_Updated"]
     df = df[req]
     df.rename(columns={
@@ -65,18 +62,18 @@ def load_and_clean(client, tabname):
     return df
 
 def clear_ws_except_header(ws):
-    all_vals = ws.get_all_values()
+    all_vals = gsheets_retry(ws.get_all_values)
     n_rows = len(all_vals)
     n_cols = len(all_vals[0]) if all_vals else 7
     if n_rows > 1:
         clear_range = f"A2:{chr(64+n_cols)}{n_rows}"
-        ws.batch_clear([clear_range])
+        gsheets_retry(ws.batch_clear, [clear_range])
 
 def get_ticker_type_map(client):
     dest_sheet_id = resolve_sheet_id(DEST_REF_SHEETS)
     ws = client.open_by_key(dest_sheet_id).worksheet(TICKERS_WS)
     # TICKERS sheet has headers: TICKER | TYPE
-    data = ws.get_all_records(expected_headers=["TICKER", "TYPE"])
+    data = gsheets_retry(ws.get_all_records, expected_headers=["TICKER", "TYPE"])
     # Create mapping with NSE: prefix, matching your SYMBOL columns everywhere else
     ticker_map = {("NSE:"+str(row["TICKER"]).strip() if not str(row["TICKER"]).startswith("NSE:") else str(row["TICKER"]).strip()): str(row["TYPE"]).strip()
                   for row in data if row.get("TICKER") and row.get("TYPE")}
@@ -90,7 +87,7 @@ def print_fill_log(symbol, date, colname, fillval, filldate):
     print(f"[FILL] Ticker: {symbol}, Date: {date}, Field: {colname} filled with value {fillval} from {filldate}")
 
 def load_bank_new_indexed(ws):
-    vals = ws.get_all_values()
+    vals = gsheets_retry(ws.get_all_values)
     rows = []
     by_ticker = {}
     idx_by_date_sym = {}
@@ -126,11 +123,7 @@ def process_and_update():
     print(f"")
     print(f"[NSE ETL PROCESS START] {start_time.strftime('%Y-%m-%d %H:%M:%S')} - Starting process_and_update")
 
-    creds = Credentials.from_service_account_file(CREDS_PATH, scopes=[
-        "https://spreadsheets.google.com/feeds",
-        "https://www.googleapis.com/auth/drive"
-    ])
-    client = gspread.authorize(creds)
+    client = get_gsheet_client()
 
     ticker_type_map = get_ticker_type_map(client)
 
@@ -165,7 +158,7 @@ def process_and_update():
     clear_ws_except_header(ws_inc)
     for idx, row in enumerate(bankinc_rows, start=2):
         row[6] = f'=IFERROR(VLOOKUP(B{idx},TICKERS!A:C,3,FALSE))'
-    ws_inc.append_rows(bankinc_rows, value_input_option="USER_ENTERED")
+    gsheets_retry(ws_inc.append_rows, bankinc_rows, value_input_option="USER_ENTERED")
 
     # 4. PREP BANK_NEW updates (with only VALUES, no formulas!)
     ws_new = client.open_by_key(dest_sheet_id).worksheet(NEW_WS)
@@ -209,23 +202,23 @@ def process_and_update():
                 if batch:
                     indices, rows_block = zip(*batch)
                     start, end = indices[0], indices[-1]
-                    ws_new.update(range_name=f"A{start}:F{end}", values=list(rows_block))
+                    gsheets_retry(ws_new.update, range_name=f"A{start}:F{end}", values=list(rows_block))
                 batch = [(idx, vals)]
             prev_idx = idx
         if batch:
             indices, rows_block = zip(*batch)
             start, end = indices[0], indices[-1]
-            ws_new.update(range_name=f"A{start}:G{end}", values=list(rows_block))
+            gsheets_retry(ws_new.update, range_name=f"A{start}:G{end}", values=list(rows_block))
 
     # 6. BATCH APPEND
     if to_append:
-        ws_new.append_rows(to_append, value_input_option="USER_ENTERED")
+        gsheets_retry(ws_new.append_rows, to_append, value_input_option="USER_ENTERED")
 
     try:
         fmt = cellFormat(
             numberFormat=numberFormat(type='DATE', pattern='dd-mmm-yyyy')
         )
-        format_cell_range(ws_new, 'A2:A', fmt)
+        gsheets_retry(format_cell_range, ws_new, 'A2:A', fmt)
         print("[FORMAT] BANK_NEW column A formatted as dd-mmm-yyyy")
     except Exception as e:
         print(f"[WARN] Could not format BANK_NEW column A: {e}")
@@ -261,7 +254,7 @@ if __name__ == "__main__":
                     return
         
                 try:
-                    val = ws.acell(cell_addr).value
+                    val = gsheets_retry(ws.acell, cell_addr).value
                 except Exception as e:
                     print(f"❌ Could not read cell {friendly_name}: {e}")
                     return
@@ -280,9 +273,7 @@ if __name__ == "__main__":
         # This recreates a client so the post-check is independent of local client variables.
         spreadsheet = None
         try:
-            scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-            creds = Credentials.from_service_account_file(CREDS_PATH, scopes=scope)
-            client_post = gspread.authorize(creds)
+            client_post = get_gsheet_client()
             dest_sheet_id = resolve_sheet_id(DEST_REF_SHEETS)
             spreadsheet = client_post.open_by_key(dest_sheet_id)
         except Exception as e:
