@@ -4,7 +4,7 @@ import time
 from ref_sheets_utils import resolve_sheet_id
 from script_logger import log_start, log_end
 from date_ext_utils import get_ws, init_date
-from google_sheets_utils import get_gsheet_client as get_client
+from google_sheets_utils import get_gsheet_client as get_client, gsheets_retry
 
 LOOP_INTERVAL = 70  # seconds between iterations
 
@@ -13,12 +13,12 @@ def write_r1(value):
     try:
         gc = get_client()
         flag_ws = gc.open_by_key(resolve_sheet_id("PORTFOLIO")).worksheet("ALL_OLD_GTTs")
-        flag_ws.update(range_name="R1", values=[[value]])
+        gsheets_retry(flag_ws.update, range_name="R1", values=[[value]])
     except Exception:
         try:
             gc = get_client()
             flag_ws = gc.open_by_key(resolve_sheet_id("PORTFOLIO")).worksheet("ALL_OLD_GTTs")
-            flag_ws.update(range_name="R1", values=[[False]])
+            gsheets_retry(flag_ws.update, range_name="R1", values=[[False]])
         except Exception:
             pass
 
@@ -38,9 +38,9 @@ def main():
     while True:
         sh4, ws4 = get_ws("KWK", "Friday_Identifier")
         try:
-            before = ws4.acell("A2").value
+            before = gsheets_retry(ws4.acell, "A2").value
             result = init_date(sh4.title, ws4, "B1", ws4, "A2")
-            after = ws4.acell("A2").value
+            after = gsheets_retry(ws4.acell, "A2").value
             changed = (after != before)
             write_r1(changed)
         except Exception:
