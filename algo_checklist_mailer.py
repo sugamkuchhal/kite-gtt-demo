@@ -3,7 +3,6 @@ import argparse
 import logging
 import sys
 import gspread
-from google.oauth2.service_account import Credentials
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -17,8 +16,9 @@ import urllib.request
 import urllib.parse
 from html import escape as _esc
 
-from runtime_paths import get_creds_path, get_smtp_token_path, get_telegram_token_path, repo_root, SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT, TELEGRAM_CHAT_ID
+from runtime_paths import get_smtp_token_path, get_telegram_token_path, repo_root, SMTP_FROM, SMTP_USER, SMTP_SERVER, SMTP_PORT, TELEGRAM_CHAT_ID
 from ref_sheets_utils import resolve_sheet_id
+from google_sheets_utils import get_gsheet_client, gsheets_retry
 from remover_old_tickers import run_removals
 from remover_profitable_sip_reg import run_sip_reg
 from remover_delisted import run_delisted
@@ -36,7 +36,7 @@ SMTP_TOKEN_FILE = str(get_smtp_token_path())
 ref_sheets = "TICKER"
 tab_name = "Checklist"
 CHECKLIST_URL = "https://docs.google.com/spreadsheets/d/143py3t5oTsz0gAfp8VpSJlpR5VS8Z4tfl067pMtW1EE/edit?gid=844019911"
-SERVICE_CREDS = str(get_creds_path())
+SERVICE_CREDS = None  # kept for call-signature compatibility; auth now via get_gsheet_client()
 
 # Healing framework: each healer has a numeric trigger cell ("signal")
 # maintained by sheet formulas. When any signal > 0, the mailer runs the
@@ -160,13 +160,10 @@ def send_via_telegram(bot_token, chat_id, text):
         raise RuntimeError(f"Telegram API error: {result}")
     logging.info("Telegram message sent successfully.")
 
-def read_sheet(sheet_id, tab_name, service_creds):
-    logging.info("Authenticating to Google Sheets with service account: %s", service_creds)
-    scope = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    creds = Credentials.from_service_account_file(service_creds, scopes=scope)
-    client = gspread.authorize(creds)
+def read_sheet(sheet_id, tab_name, service_creds=None):
+    client = get_gsheet_client()
     ws = client.open_by_key(sheet_id).worksheet(tab_name)
-    rows = ws.get_all_values()
+    rows = gsheets_retry(ws.get_all_values)
     logging.info("Read %d total rows (including header/empty rows) from tab '%s'.", len(rows), tab_name)
     return rows
 
@@ -275,13 +272,11 @@ def format_checklist_email(rows, subject_date):
 # logs remain in the console (GitHub Actions log).
 # ==========================
 
-def read_signal_cell(sheet_id, tab, cell, service_creds):
+def read_signal_cell(sheet_id, tab, cell, service_creds=None):
     """Read a numeric healing-trigger cell. Non-numeric/blank -> 0."""
-    scope = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    creds = Credentials.from_service_account_file(service_creds, scopes=scope)
-    client = gspread.authorize(creds)
+    client = get_gsheet_client()
     ws = client.open_by_key(sheet_id).worksheet(tab)
-    raw = ws.acell(cell).value
+    raw = gsheets_retry(ws.acell, cell).value
     try:
         val = float(str(raw).replace(",", "").strip())
     except (TypeError, ValueError):
@@ -522,11 +517,9 @@ def populate_gids_and_urls(ws):
     I and J in a single batch update.
     Spreadsheets are opened once and cached.
     """
-    scope = ["https://www.googleapis.com/auth/spreadsheets"]
-    creds = Credentials.from_service_account_file(SERVICE_CREDS, scopes=scope)
-    client = gspread.authorize(creds)
+    client = get_gsheet_client()
 
-    all_rows = ws.get_all_values()
+    all_rows = gsheets_retry(ws.get_all_values)
     data_rows = all_rows[GID_DATA_START_ROW - 1:]
 
     cache = {}   # spreadsheet_id -> {tab_title: gid}
@@ -550,7 +543,7 @@ def populate_gids_and_urls(ws):
             logging.info("GID populate: opening spreadsheet %s", spreadsheet_id)
             try:
                 wb = client.open_by_key(spreadsheet_id)
-                cache[spreadsheet_id] = {s.title: s.id for s in wb.worksheets()}
+                cache[spreadsheet_id] = {s.title: s.id for s in gsheets_retry(wb.worksheets)}
             except Exception as e:
                 logging.warning("GID populate: could not open %s: %s", spreadsheet_id, e)
                 cache[spreadsheet_id] = {}
@@ -566,7 +559,7 @@ def populate_gids_and_urls(ws):
         logging.info("GID populate: row %d -> GID=%s", sheet_row, gid)
 
     if updates:
-        ws.update_cells(updates, value_input_option="RAW")
+        gsheets_retry(ws.update_cells, updates, value_input_option="RAW")
         logging.info("GID populate: wrote %d cell(s).", len(updates))
     else:
         logging.info("GID populate: nothing to update.")
@@ -581,9 +574,7 @@ def main():
 
     # Step 0: populate GIDs and URLs in the Checklist tab before reading
     logging.info("Step 0: populating GIDs and URLs in Checklist tab...")
-    _scope = ["https://www.googleapis.com/auth/spreadsheets"]
-    _creds = Credentials.from_service_account_file(SERVICE_CREDS, scopes=_scope)
-    _client = gspread.authorize(_creds)
+    _client = get_gsheet_client()
     _ws = _client.open_by_key(sheet_id).worksheet(tab_name)
     populate_gids_and_urls(_ws)
 
