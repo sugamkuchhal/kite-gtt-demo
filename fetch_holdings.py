@@ -17,11 +17,9 @@ from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "db"))
-from db import get_conn, init_db, update_meta
+from db import get_conn, init_db, update_meta, get_db_relpath
 from git_utils import commit_file_if_changed
 
-ref_sheets = "PORTFOLIO"
-sheet_id = resolve_sheet_id(ref_sheets)
 tab_name_holdings = "ZERODHA_PORTFOLIO"
 tab_name_portfolio = "Portfolio"
 
@@ -38,7 +36,7 @@ def fetch_holdings():
         logging.error(f"❌ Failed to fetch holdings: {e}")
         return []
 
-def write_to_gsheet(holdings):
+def write_to_gsheet(holdings, ref_sheets="PORTFOLIO"):
     if not holdings:
         logging.warning("No holdings to write to Google Sheet.")
         return
@@ -63,6 +61,7 @@ def write_to_gsheet(holdings):
 
     # Connect to Google Sheet
     gc = get_gsheet_client()
+    sheet_id = resolve_sheet_id(ref_sheets)
     sh = gc.open_by_key(sheet_id)
     ws = sh.worksheet(tab_name_holdings)
 
@@ -71,10 +70,11 @@ def write_to_gsheet(holdings):
     gsheets_retry(ws.update, values=data, range_name='A1')
     logging.info(f"✅ Holdings written to {ref_sheets} [{tab_name_holdings}]")
 
-def check_portfolio_discrepancy():
+def check_portfolio_discrepancy(ref_sheets="PORTFOLIO"):
     CELL = "U1"
     CELL_CHECK = "V1"
     gc = get_gsheet_client()
+    sheet_id = resolve_sheet_id(ref_sheets)
     sh = gc.open_by_key(sheet_id)
     ws = sh.worksheet(tab_name_portfolio)
     try:
@@ -123,14 +123,19 @@ def write_holdings_to_db(holdings):
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Fetch holdings from Kite and write to a sheet.")
+    parser.add_argument("--ref-sheets", default="PORTFOLIO", help="Resolver key from ref_sheets.json")
+    args = parser.parse_args()
+
     try:
         holdings = fetch_holdings()
-        write_to_gsheet(holdings)
-        check_portfolio_discrepancy()
+        write_to_gsheet(holdings, ref_sheets=args.ref_sheets)
+        check_portfolio_discrepancy(ref_sheets=args.ref_sheets)
         init_db()
         write_holdings_to_db(holdings)
         commit_file_if_changed(
-            filepath="db/trading.db",
+            filepath=get_db_relpath(),
             message="chore: update trading.db — holdings [skip ci]",
             repo_root=repo_root(),
         )

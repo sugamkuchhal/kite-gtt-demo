@@ -18,9 +18,11 @@ from datetime import datetime, timezone
 
 def get_db_path() -> Path:
     """
-    Returns the path to trading.db.
-    - GitHub Actions : $GITHUB_WORKSPACE/db/trading.db
-    - Local          : <repo_root>/db/trading.db
+    Returns the path to the trading DB file.
+    - GitHub Actions : $GITHUB_WORKSPACE/db/<filename>
+    - Local          : <repo_root>/db/<filename>
+    Filename defaults to "trading.db" but can be overridden via the
+    TRADING_DB_NAME env var (e.g. "trading_hedge.db" for a second account).
     """
     workspace = os.environ.get("GITHUB_WORKSPACE")
     if workspace:
@@ -29,7 +31,15 @@ def get_db_path() -> Path:
         db_dir = Path(__file__).resolve().parent
 
     db_dir.mkdir(parents=True, exist_ok=True)
-    return db_dir / "trading.db"
+    filename = os.environ.get("TRADING_DB_NAME", "trading.db")
+    return db_dir / filename
+
+
+def get_db_relpath() -> str:
+    """Returns the repo-relative path (e.g. "db/trading.db") for use with
+    git_utils.commit_file_if_changed, matching whatever get_db_path() resolved
+    (respects TRADING_DB_NAME override)."""
+    return f"db/{os.environ.get('TRADING_DB_NAME', 'trading.db')}"
 
 
 def get_conn() -> sqlite3.Connection:

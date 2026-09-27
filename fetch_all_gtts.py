@@ -8,7 +8,7 @@ from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "db"))
-from db import get_conn, init_db, update_meta
+from db import get_conn, init_db, update_meta, get_db_relpath
 from git_utils import commit_file_if_changed
 from runtime_paths import repo_root
 
@@ -18,13 +18,12 @@ from script_logger import log_start, log_end
 _RUN_CTX = log_start("fetch_all_gtts")
 atexit.register(log_end, _RUN_CTX)
 # Google Sheet details
-ref_sheets = "PORTFOLIO"
-sheet_id = resolve_sheet_id(ref_sheets)
 tab_name = "ZERODHA_GTT_DATA"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
-def fetch_all_gtts():
+def fetch_all_gtts(ref_sheets="PORTFOLIO"):
+    sheet_id = resolve_sheet_id(ref_sheets)
     kite = get_kite()
     try:
         gtts = kite.get_gtts()
@@ -108,22 +107,27 @@ def write_gtts_to_db(gtts):
     logging.info("✅ %d GTTs written to DB.", len(rows))
 
 
-def run_cli():
+def run_cli(ref_sheets="PORTFOLIO"):
     try:
-        fetch_all_gtts()
+        fetch_all_gtts(ref_sheets=ref_sheets)
         return 0
     except Exception:
         logging.exception("fetch_all_gtts failed.")
         return 1
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Fetch all GTTs from Kite and write to a sheet.")
+    parser.add_argument("--ref-sheets", default="PORTFOLIO", help="Resolver key from ref_sheets.json")
+    args = parser.parse_args()
+
     init_db()
     kite = get_kite()
     gtts = kite.get_gtts()
     write_gtts_to_db(gtts or [])
     commit_file_if_changed(
-        filepath="db/trading.db",
+        filepath=get_db_relpath(),
         message="chore: update trading.db — gtts [skip ci]",
         repo_root=repo_root(),
     )
-    raise SystemExit(run_cli())
+    raise SystemExit(run_cli(ref_sheets=args.ref_sheets))

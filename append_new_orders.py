@@ -8,12 +8,11 @@ from script_logger import log_start, log_end
 
 _RUN_CTX = log_start("append_new_orders")
 atexit.register(log_end, _RUN_CTX)
-ref_sheets = "PORTFOLIO"
 tab_name_src = "LATEST_ORDERS"
 tab_name_dest = "NEW_ORDERS"
 SRC_RANGE = "A:H"  # covers columns A to H
 
-def main():
+def main(ref_sheets="PORTFOLIO"):
     gc = get_gsheet_client()
 
     sheet_id = resolve_sheet_id(ref_sheets)
@@ -36,13 +35,18 @@ def main():
     gsheets_retry(ws_dest.append_rows, data_rows, value_input_option="USER_ENTERED")
     print(f"✅ Appended {len(data_rows)} rows from {tab_name_src} to {tab_name_dest}.")
 
-def run_cli():
+def run_cli(ref_sheets="PORTFOLIO"):
     try:
-        main()
+        main(ref_sheets=ref_sheets)
         return 0
     except Exception:
         logging.exception("append_new_orders failed.")
         return 1
 
 if __name__ == "__main__":
-    raise SystemExit(run_cli())
+    import argparse
+    parser = argparse.ArgumentParser(description="Append new orders from LATEST_ORDERS to NEW_ORDERS.")
+    parser.add_argument("--ref-sheets", default="PORTFOLIO", help="Resolver key from ref_sheets.json")
+    args = parser.parse_args()
+
+    raise SystemExit(run_cli(ref_sheets=args.ref_sheets))

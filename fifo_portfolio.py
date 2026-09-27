@@ -11,12 +11,11 @@ from script_logger import log_start, log_end
 _RUN_CTX = log_start("fifo_portfolio")
 atexit.register(log_end, _RUN_CTX)
 # --- CONFIG ---
-ref_sheets = "PORTFOLIO"
 tab_name = "ALL_ORDERS"
 
 import logging
 
-def main():
+def main(ref_sheets="PORTFOLIO"):
     # --- STEP 1: DOWNLOAD DATA FROM GOOGLE SHEETS ---
     client = get_gsheet_client()
 
@@ -309,8 +308,13 @@ def main():
     print("✅ FIFO_Summary, Buy_Trade_Status, Sell_Trade_Status, and BUY_SELL_MATCHES updated.")
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Run FIFO matching on ALL_ORDERS and upload results.")
+    parser.add_argument("--ref-sheets", default="PORTFOLIO", help="Resolver key from ref_sheets.json")
+    args = parser.parse_args()
+
     try:
-        main()
+        main(ref_sheets=args.ref_sheets)
         raise SystemExit(0)
     except KeyboardInterrupt:
         logging.warning("Interrupted by user.")

@@ -7,7 +7,7 @@ from google_sheets_utils import get_gsheet_client, gsheets_retry
 from ref_sheets_utils import resolve_sheet_id
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "db"))
-from db import get_conn, init_db, update_meta
+from db import get_conn, init_db, update_meta, get_db_relpath
 from git_utils import commit_file_if_changed
 from runtime_paths import repo_root
 
@@ -17,14 +17,13 @@ from script_logger import log_start, log_end
 
 _RUN_CTX = log_start("fetch_all_orders")
 atexit.register(log_end, _RUN_CTX)
-ref_sheets = "PORTFOLIO"
-sheet_id = resolve_sheet_id(ref_sheets)
 tab_name_orders = "ZERODHA_ORDERS"
 tab_name_latest_orders = "LATEST_ORDERS"
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
 
-def fetch_all_orders():
+def fetch_all_orders(ref_sheets="PORTFOLIO"):
+    sheet_id = resolve_sheet_id(ref_sheets)
     kite = get_kite()
     try:
         orders = kite.orders()
@@ -121,22 +120,27 @@ def write_orders_to_db(orders):
     logging.info("✅ %d orders written to DB.", len(rows))
 
 
-def run_cli():
+def run_cli(ref_sheets="PORTFOLIO"):
     try:
-        fetch_all_orders()
+        fetch_all_orders(ref_sheets=ref_sheets)
         return 0
     except Exception:
         logging.exception("fetch_all_orders failed.")
         return 1
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Fetch all orders from Kite and write to a sheet.")
+    parser.add_argument("--ref-sheets", default="PORTFOLIO", help="Resolver key from ref_sheets.json")
+    args = parser.parse_args()
+
     init_db()
     kite = get_kite()
     orders = kite.orders()
     write_orders_to_db(orders or [])
     commit_file_if_changed(
-        filepath="db/trading.db",
+        filepath=get_db_relpath(),
         message="chore: update trading.db — orders [skip ci]",
         repo_root=repo_root(),
     )
-    raise SystemExit(run_cli())
+    raise SystemExit(run_cli(ref_sheets=args.ref_sheets))
