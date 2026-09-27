@@ -15,3 +15,5 @@ telegram_token.json
 
 # Database (do not commit — LFS history purged)
 db/trading.db
+api_key_hedge.txt
+access_token_hedge.txt
