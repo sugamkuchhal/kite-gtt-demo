@@ -34,7 +34,11 @@ def run_until_done(ref_sheets, tab_name, src_cell="B1", dest_cell="A2"):
 
 
 def main():
-    # KWK/Friday_Identifier — checks A2 before and after to determine if changed
+    # KWK/Friday_Identifier — checks A2 before and after to determine if changed.
+    # any_changed accumulates across all iterations of this run, since the loop's
+    # final iteration always reports changed=False (that's what makes it exit) —
+    # writing R1 per-iteration would always clobber a True back to False.
+    any_changed = False
     while True:
         sh4, ws4 = get_ws("KWK", "Friday_Identifier")
         try:
@@ -42,14 +46,15 @@ def main():
             result = init_date(sh4.title, ws4, "B1", ws4, "A2")
             after = gsheets_retry(ws4.acell, "A2").value
             changed = (after != before)
-            write_r1(changed)
+            if changed:
+                any_changed = True
         except Exception:
-            write_r1(False)
             result = None
         if result is None:
             break
         print(f"Friday_Identifier -> ⏳ Next iteration in {LOOP_INTERVAL}s...")
         time.sleep(LOOP_INTERVAL)
+    write_r1(any_changed)
 
     run_until_done("PORTFOLIO", "CREDIT_CANDIDATES", src_cell="K24", dest_cell="K23")
     run_until_done("RTP", "DATE_Identifier")
