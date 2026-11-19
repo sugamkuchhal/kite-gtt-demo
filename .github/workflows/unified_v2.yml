@@ -219,7 +219,7 @@ jobs:
           CMD_VAL: ${{ steps.plan.outputs.command }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
         run: |
-          sudo -E bash -c '
+          bash -c '
             set -euo pipefail
             export GH_TOKEN="${GH_TOKEN:-}"
             if [ -f .venv/bin/activate ]; then
